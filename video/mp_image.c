@@ -939,7 +939,7 @@ void mp_image_params_guess_csp(struct mp_image_params *params)
         if (params->color.primaries == MP_CSP_PRIM_AUTO)
             params->color.primaries = MP_CSP_PRIM_BT_709;
         if (params->color.gamma == MP_CSP_TRC_AUTO)
-            params->color.gamma = MP_CSP_TRC_SRGB;
+            params->color.gamma = MP_CSP_TRC_BT_1886;
     } else if (forced_csp == MP_CSP_XYZ) {
         params->color.space = MP_CSP_XYZ;
         params->color.levels = MP_CSP_LEVELS_PC;
