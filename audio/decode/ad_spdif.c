@@ -209,8 +209,12 @@ static int init_filter(struct mp_filter *da)
         num_channels                    = 2;
         break;
     case AV_CODEC_ID_DTS: {
-        bool is_hd = profile == AV_PROFILE_DTS_HD_HRA ||
-                     profile == AV_PROFILE_DTS_HD_MA  ||
+        // Define DTS-HD HRA, DTS-HD MA, DTS-HD MA X and DTS-HD MA IMAX 
+        // as HD Audio. Just be sure all are treated correctly. 
+        bool is_hd = profile == AV_PROFILE_DTS_HD_HRA       ||
+                     profile == AV_PROFILE_DTS_HD_MA        ||
+                     profile == AV_PROFILE_DTS_HD_MA_X      ||
+                     profile == AV_PROFILE_DTS_HD_MA_X_IMAX ||
                      profile == AV_PROFILE_UNKNOWN;
 
         // Apparently, DTS-HD over SPDIF is specified to be 7.1 (8 channels)
