@@ -96,7 +96,7 @@ struct priv {
     struct ra_tex *backbuffer;
     ID3D11Device *device;
     IDXGISwapChain *swapchain;
-    struct mp_colorspace swapchain_csp;
+    struct pl_color_space swapchain_csp;
 
     int64_t perf_freq;
     unsigned sync_refresh_count;
@@ -519,6 +519,16 @@ IDXGISwapChain *ra_d3d11_ctx_get_swapchain(struct ra_ctx *ra)
     IDXGISwapChain_AddRef(p->swapchain);
 
     return p->swapchain;
+}
+
+bool ra_d3d11_ctx_prefer_8bit_output_format(struct ra_ctx *ra)
+{
+    if (ra->swapchain->fns != &d3d11_swapchain)
+        return false;
+
+    struct priv *p = ra->priv;
+
+    return p->opts->output_format == DXGI_FORMAT_R8G8B8A8_UNORM;
 }
 
 const struct ra_ctx_fns ra_ctx_d3d11 = {

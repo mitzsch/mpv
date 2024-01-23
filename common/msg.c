@@ -257,7 +257,9 @@ void mp_msg_flush_status_line(struct mp_log *log, bool clear)
         goto done;
 
     if (!clear) {
-        fprintf(stderr, TERM_ESC_RESTORE_CURSOR "\n");
+        if (log->root->isatty[STDERR_FILENO])
+            fprintf(stderr, TERM_ESC_RESTORE_CURSOR);
+        fprintf(stderr, "\n");
         log->root->blank_lines = 0;
         log->root->status_lines = 0;
         goto done;
@@ -350,7 +352,7 @@ static int term_disp_width(bstr str)
 
         bstr code = bstr_split_utf8(str, &str);
         if (code.len == 0)
-            continue;
+            return 0;
 
         if (code.len == 1 && *code.start == '\n')
             continue;
@@ -748,6 +750,10 @@ void mp_msg_update_msglevels(struct mpv_global *global, struct MPOpts *opts)
     root->module = opts->msg_module;
     root->use_terminal = opts->use_terminal;
     root->show_time = opts->msg_time;
+
+    if (root->really_quiet)
+        root->status_lines = 0;
+
     for (int i = STDOUT_FILENO; i <= STDERR_FILENO && root->use_terminal; ++i) {
         root->isatty[i] = isatty(i);
         root->color[i] = opts->msg_color && root->isatty[i];
@@ -847,6 +853,8 @@ void mp_msg_uninit(struct mpv_global *global)
 {
     struct mp_log_root *root = global->log->root;
     mp_msg_flush_status_line(global->log, true);
+    if (root->really_quiet && root->isatty[STDERR_FILENO])
+        fprintf(stderr, TERM_ESC_RESTORE_CURSOR);
     terminate_log_file_thread(root);
     mp_msg_log_buffer_destroy(root->early_buffer);
     mp_msg_log_buffer_destroy(root->early_filebuffer);
