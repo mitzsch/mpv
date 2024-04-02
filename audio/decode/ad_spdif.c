@@ -197,6 +197,7 @@ static int init_filter(struct mp_filter *da)
         goto fail;
 
     stream->codecpar->codec_id = spdif_ctx->codec_id;
+    stream->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
 
     AVDictionary *format_opts = NULL;
 
