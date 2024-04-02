@@ -260,7 +260,9 @@ static int init_filter(struct mp_filter *da)
     default:
         abort();
     }
-
+    
+    stream->codecpar->sample_rate = samplerate;
+    
     struct mp_chmap chmap;
     mp_chmap_from_channels(&chmap, num_channels);
     mp_aframe_set_chmap(spdif_ctx->fmt, &chmap);
