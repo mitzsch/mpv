@@ -55,9 +55,11 @@ local styles = {
     fatal = '{\\1c&H5791f9&}',
     suggestion = '{\\1c&Hcc99cc&}',
     selected_suggestion = '{\\1c&H2fbdfa&\\b1}',
-    default_item = '{\\1c&H2fbdfa&}',
     disabled = '{\\1c&Hcccccc&}',
 }
+for key, style in pairs(styles) do
+    styles[key] = style .. '{\\1a&H00&\\3c&H111111&\\3a&H00&}'
+end
 
 local terminal_styles = {
     debug = '\027[90m',
@@ -446,16 +448,18 @@ local function populate_log_with_matches()
         local style = ''
         local terminal_style = ''
 
-        if matches[i].index == default_item then
-            style = styles.default_item
-            terminal_style = terminal_styles.default_item
-        end
-        if i == selected_match then
+        if i == selected_match or matches[i].index == default_item then
             local color, alpha = mpv_color_to_ass(mp.get_property('osd-selected-color'))
             local outline_color, outline_alpha =
                 mpv_color_to_ass(mp.get_property('osd-selected-outline-color'))
-            style = style .. "{\\b1\\1c&H" .. color .. "&\\1a&H" .. alpha ..
-                             "&\\3c&H" .. outline_color .. "&\\3a&H" .. outline_alpha .. "&}"
+            style = '{\\1c&H' .. color .. '&\\1a&H' .. alpha ..
+                    '&\\3c&H' .. outline_color .. '&\\3a&H' .. outline_alpha .. '&}'
+        end
+        if matches[i].index == default_item then
+            terminal_style = terminal_styles.default_item
+        end
+        if i == selected_match then
+            style = style .. '{\\b1}'
             terminal_style = terminal_style .. terminal_styles.selected_suggestion
         end
 
@@ -545,7 +549,6 @@ local function update()
     local has_shadow = mp.get_property('osd-border-style'):find('box$') == nil
     local font = get_font()
     local style = '{\\r' ..
-                  '\\1a&H00&\\3a&H00&\\1c&Heeeeee&\\3c&H111111&' ..
                   (has_shadow and '\\4a&H99&\\4c&H000000&\\xshad0\\yshad1' or '') ..
                   (font and '\\fn' .. font or '') ..
                   '\\fs' .. opts.font_size ..
