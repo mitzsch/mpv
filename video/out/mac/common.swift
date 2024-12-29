@@ -358,7 +358,7 @@ class Common: NSObject {
     }
 
     func setAppIcon() {
-        if ProcessInfo.processInfo.environment["MPVBUNDLE"] != "true" {
+        if !AppHub.shared.isBundle {
             NSApp.applicationIconImage = AppHub.shared.getIcon()
         }
     }
@@ -664,9 +664,9 @@ class Common: NSObject {
         while option.nextChangedMacOption(property: &opt) {
             switch opt {
             case TypeHelper.toPointer(&option.macPtr.pointee.macos_title_bar_appearance):
-                titleBar?.set(appearance: Int(option.mac.macos_title_bar_appearance))
+                titleBar?.set(appearance: option.mac.macos_title_bar_appearance)
             case TypeHelper.toPointer(&option.macPtr.pointee.macos_title_bar_material):
-                titleBar?.set(material: Int(option.mac.macos_title_bar_material))
+                titleBar?.set(material: option.mac.macos_title_bar_material)
             case TypeHelper.toPointer(&option.macPtr.pointee.macos_title_bar_color):
                 titleBar?.set(color: option.mac.macos_title_bar_color)
             case TypeHelper.toPointer(&option.macPtr.pointee.cocoa_cb_output_csp):
