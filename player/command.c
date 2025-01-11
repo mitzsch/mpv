@@ -3517,6 +3517,13 @@ static int mp_property_cwd(void *ctx, struct m_property *prop,
     return M_PROPERTY_NOT_IMPLEMENTED;
 }
 
+static int mp_property_current_watch_later_dir(void *ctx, struct m_property *prop,
+                                               int action, void *arg)
+{
+    MPContext *mpctx = ctx;
+    return m_property_strdup_ro(action, arg, mp_get_playback_resume_dir(mpctx));
+}
+
 static int mp_property_protocols(void *ctx, struct m_property *prop,
                                  int action, void *arg)
 {
@@ -4377,6 +4384,7 @@ static const struct m_property mp_properties_base[] = {
     {"ambient-light", mp_property_ambient_light},
 
     {"working-directory", mp_property_cwd},
+    {"current-watch-later-dir", mp_property_current_watch_later_dir},
 
     {"protocol-list", mp_property_protocols},
     {"decoder-list", mp_property_decoders},
@@ -4544,18 +4552,18 @@ int mp_property_do(const char *name, int action, void *val,
     int r = m_property_do(ctx->log, cmd->properties, name, action, val, ctx);
 
     if (mp_msg_test(ctx->log, MSGL_V) && is_property_set(action, val)) {
-        struct m_option ot = {0};
+        struct m_option option_type = {0};
         void *data = val;
         switch (action) {
         case M_PROPERTY_SET_NODE:
-            ot.type = &m_option_type_node;
+            option_type.type = &m_option_type_node;
             break;
         case M_PROPERTY_SET_STRING:
-            ot.type = &m_option_type_string;
+            option_type.type = &m_option_type_string;
             data = &val;
             break;
         }
-        char *t = ot.type ? m_option_print(&ot, data) : NULL;
+        char *t = option_type.type ? m_option_print(&option_type, data) : NULL;
         MP_VERBOSE(ctx, "Set property: %s%s%s -> %d\n",
                    name, t ? "=" : "", t ? t : "", r);
         talloc_free(t);
@@ -7127,6 +7135,12 @@ const struct mp_cmd_def mp_cmds[] = {
                 {"window", 1},
                 {"subtitles", 2}),
                 OPTDEF_INT(2)},
+             {"format", OPT_CHOICE(v.i,
+                {"bgr0", 0},
+                {"bgra", 1},
+                {"rgba", 2},
+                {"rgba64", 3}),
+                OPTDEF_INT(0)},
         },
     },
     { "loadfile", cmd_loadfile,

@@ -61,7 +61,9 @@ cache
 play
     =============   ================================================
     left-click      toggle play/pause
-    right-click     toggle infinite looping
+    shift+L-click   toggle infinite looping of the playlist
+    middle-click    toggle infinite looping of the playlist
+    right-click     toggle infinite looping of the current file
     =============   ================================================
 
 skip back
@@ -168,7 +170,8 @@ Configurable Options
     Default: bottombar
 
     The layout for the OSC. Currently available are: box, slimbox,
-    bottombar and topbar. Default pre-0.21.0 was 'box'.
+    bottombar, topbar, slimbottombar and slimtopbar. Default pre-0.21.0 was
+    'box'.
 
 ``seekbarstyle``
     Default: bar
@@ -284,7 +287,8 @@ Configurable Options
 ``barmargin``
     Default: 0
 
-    Margin from bottom (bottombar) or top (topbar), in pixels
+    Margin from bottom (bottombar, slimbottombar) or top (topbar, slimtopbar),
+    in pixels.
 
 ``boxalpha``
     Default: 80
@@ -367,10 +371,10 @@ Configurable Options
     default values.) Additionally, ``visibility`` must be set to ``always``.
     Otherwise, this option does nothing.
 
-    Currently, this is supported for the ``bottombar`` and ``topbar`` layout
-    only. The other layouts do not change if this option is set. Separately,
-    if window controls are present (see below), they will be affected
-    regardless of which osc layout is in use.
+    Currently, this is supported for the ``bottombar``, ``slimbottombar``,
+    ``topbar`` and ``slimtopbar`` layouts only. The other layouts do not change
+    if this option is set. Separately, if window controls are present (see
+    below), they will be affected regardless of which osc layout is in use.
 
     The border is static and appears even if the OSC is configured to appear
     only on mouse interaction. If the OSC is invisible, the border is simply
@@ -524,7 +528,7 @@ clicked. ``mbtn_mid`` commands are also triggered with ``shift+mbtn_left``.
 
 ``play_pause_mbtn_left_command=cycle pause``
 
-``play_pause_mbtn_mid_command=``
+``play_pause_mbtn_mid_command=cycle-values loop-playlist inf no``
 
 ``play_pause_mbtn_right_command=cycle-values loop-file inf no``
 
@@ -575,6 +579,21 @@ clicked. ``mbtn_mid`` commands are also triggered with ``shift+mbtn_left``.
 ``fullscreen_mbtn_mid_command=``
 
 ``fullscreen_mbtn_right_command="cycle window-maximized"``
+
+Custom Buttons
+~~~~~~~~~~~~~~
+
+Additional script-opts are available to define custom buttons in ``bottombar``
+and ``topbar`` layouts.
+
+.. admonition:: Example to add loop and shuffle buttons
+
+    custom_button_1_content=🔁
+    custom_button_1_mbtn_left_command=cycle-values loop-file inf no
+    custom_button_1_mbtn_right_command=cycle-values loop-playlist inf no
+
+    custom_button_2_content=🔀
+    custom_button_2_mbtn_left_command=playlist-shuffle
 
 Script Commands
 ~~~~~~~~~~~~~~~

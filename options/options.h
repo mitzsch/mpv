@@ -104,6 +104,7 @@ struct mp_subtitle_opts {
     bool ass_scale_with_window;
     struct osd_style_opts *sub_style;
     float sub_scale;
+    bool sub_scale_signs;
     float sub_gauss;
     bool sub_gray;
     bool ass_enabled;
@@ -337,7 +338,7 @@ typedef struct MPOpts {
     bool osd_bar_visible;
 
     int w32_priority;
-    int media_controls;
+    bool media_controls;
 
     struct bluray_opts *stream_bluray_opts;
     struct cdda_opts *stream_cdda_opts;

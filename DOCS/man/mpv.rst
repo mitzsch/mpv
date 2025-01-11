@@ -295,6 +295,8 @@ item, or by navigating them with keybindings: ``Down`` and ``Ctrl+n`` go down,
 ``Up`` and ``Ctrl+p`` go up, ``Page down`` and ``Ctrl+f`` scroll down one page,
 and ``Page up`` and ``Ctrl+b`` scroll up one page.)
 
+In track selectors, selecting the current tracks disables it.
+
 g-p
     Select a playlist entry.
 
@@ -325,6 +327,11 @@ g-l
 
 g-d
     Select an audio device.
+
+g-w
+    Select a file from watch later config files (see `RESUMING PLAYBACK`_) to
+    resume playing. Requires ``--write-filename-in-watch-later-config``. This
+    doesn't work with ``--ignore-path-in-watch-later-config``.
 
 g-b
     Select a defined input binding.

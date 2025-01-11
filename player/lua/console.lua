@@ -38,6 +38,7 @@ local opts = {
     case_sensitive = platform ~= 'windows' and true or false,
     history_dedup = true,
     font_hw_ratio = 'auto',
+    pause_on_open = false,
 }
 
 local styles = {
@@ -54,7 +55,6 @@ local styles = {
     error = '{\\1c&H7a77f2&}',
     fatal = '{\\1c&H5791f9&}',
     suggestion = '{\\1c&Hcc99cc&}',
-    selected_suggestion = '{\\1c&H2fbdfa&\\b1}',
     disabled = '{\\1c&Hcccccc&}',
 }
 for key, style in pairs(styles) do
@@ -90,6 +90,7 @@ local log_buffers = {[id] = {}}
 local key_bindings = {}
 local dont_bind_up_down = false
 local global_margins = { t = 0, b = 0 }
+local was_playing = true
 local input_caller
 
 local suggestion_buffer = {}
@@ -301,6 +302,19 @@ local function should_highlight_completion(i)
            (i == 1 and selected_suggestion_index == 0 and input_caller == nil)
 end
 
+local function mpv_color_to_ass(color)
+    return color:sub(8,9) .. color:sub(6,7) ..  color:sub(4,5),
+           string.format('%x', 255 - tonumber('0x' .. color:sub(2,3)))
+end
+
+local function get_selected_ass()
+    local color, alpha = mpv_color_to_ass(mp.get_property('osd-selected-color'))
+    local outline_color, outline_alpha =
+        mpv_color_to_ass(mp.get_property('osd-selected-outline-color'))
+    return '{\\1c&H' .. color .. '&\\1a&H' .. alpha ..
+           '&\\3c&H' .. outline_color .. '&\\3a&H' .. outline_alpha .. '&}'
+end
+
 -- Takes a list of strings, a max width in characters and
 -- optionally a max row count.
 -- The result contains at least one column.
@@ -383,8 +397,8 @@ local function format_table(list, width_max, rows_max)
             columns[column] = ass_escape(string.format(format_string, list[i]))
 
             if should_highlight_completion(i) then
-                columns[column] = styles.selected_suggestion .. columns[column]
-                                  .. '{\\b}' .. styles.suggestion
+                columns[column] = '{\\b1}' .. get_selected_ass() .. columns[column] ..
+                                  '{\\b\\1a&\\3a&}' .. styles.suggestion
             end
         end
         -- first row is at the bottom
@@ -404,11 +418,6 @@ local function fuzzy_find(needle, haystacks, case_sensitive)
         result[i] = value[1]
     end
     return result
-end
-
-local function mpv_color_to_ass(color)
-    return color:sub(8,9) .. color:sub(6,7) ..  color:sub(4,5),
-           string.format('%x', 255 - tonumber('0x' .. color:sub(2,3)))
 end
 
 local function populate_log_with_matches()
@@ -453,11 +462,7 @@ local function populate_log_with_matches()
         local terminal_style = ''
 
         if i == selected_match or matches[i].index == default_item then
-            local color, alpha = mpv_color_to_ass(mp.get_property('osd-selected-color'))
-            local outline_color, outline_alpha =
-                mpv_color_to_ass(mp.get_property('osd-selected-outline-color'))
-            style = '{\\1c&H' .. color .. '&\\1a&H' .. alpha ..
-                    '&\\3c&H' .. outline_color .. '&\\3a&H' .. outline_alpha .. '&}'
+            style = get_selected_ass()
         end
         if matches[i].index == default_item then
             terminal_style = terminal_styles.default_item
@@ -549,10 +554,8 @@ local function update()
     local clipping_coordinates = '0,' .. coordinate_top .. ',' ..
                                  osd_w .. ',' .. osd_h
     local ass = assdraw.ass_new()
-    local has_shadow = mp.get_property('osd-border-style'):find('box$') == nil
     local font = get_font()
     local style = '{\\r' ..
-                  (has_shadow and '\\4a&H99&\\4c&H000000&\\xshad0\\yshad1' or '') ..
                   (font and '\\fn' .. font or '') ..
                   '\\fs' .. opts.font_size ..
                   '\\bord' .. opts.border_size .. '\\fsp0' ..
@@ -563,11 +566,12 @@ local function update()
     -- of the drawing. So the cursor doesn't affect layout too much, make it as
     -- thin as possible and make it appear to be 1px wide by giving it 0.5px
     -- horizontal borders.
+    local color, alpha = mpv_color_to_ass(mp.get_property('osd-color'))
     local cheight = opts.font_size * 8
-    local cglyph = '{\\rDefault' ..
+    local cglyph = '{\\r\\blur0' ..
                    (mp.get_property_native('focused') == false
-                    and '\\alpha&HFF&' or '\\1a&H44&\\3a&H44&\\4a&H99&') ..
-                   '\\1c&Heeeeee&\\3c&Heeeeee&\\4c&H000000&' ..
+                    and '\\alpha&HFF&' or '\\3a&H' .. alpha .. '&') ..
+                   '\\3c&H' .. color .. '&' ..
                    '\\xbord0.5\\ybord0\\xshad0\\yshad1\\p4\\pbo24}' ..
                    'm 0 0 l 1 0 l 1 ' .. cheight .. ' l 0 ' .. cheight ..
                    '{\\p0}'
@@ -689,10 +693,20 @@ end
 local function handle_edit()
     if selectable_items then
         matches = {}
-        selected_match = 1
-
         for i, match in ipairs(fuzzy_find(line, selectable_items)) do
             matches[i] = { index = match, text = selectable_items[match] }
+        end
+
+        if line == '' and default_item then
+            selected_match = default_item
+
+            local max_lines = calculate_max_log_lines()
+            first_match_to_print = math.max(1, selected_match - math.floor(max_lines / 2) + 1)
+            if first_match_to_print > #selectable_items - max_lines + 2 then
+                first_match_to_print = math.max(1, #selectable_items - max_lines + 1)
+            end
+        else
+            selected_match = 1
         end
 
         update()
@@ -1023,7 +1037,6 @@ local function search_history()
     searching_history = true
     suggestion_buffer = {}
     selectable_items = {}
-    first_match_to_print = 1
 
     for i = 1, #history do
         selectable_items[i] = history[#history + 1 - i]
@@ -1316,7 +1329,7 @@ end
 local function command_flags_at_1st_argument_list(command)
     local flags = {
         ['playlist-next'] = {'weak', 'force'},
-        ['playlist-play-index'] = {'current'},
+        ['playlist-play-index'] = {'current', 'none'},
         ['playlist-remove'] = {'current'},
         ['rescan-external-files'] = {'reselect', 'keep-selection'},
         ['revert-seek'] = {'mark', 'mark-permanent'},
@@ -1335,6 +1348,7 @@ local function command_flags_at_2nd_argument_list(command)
         ['loadfile'] = {'replace', 'append', 'append-play', 'insert-next',
                         'insert-next-play', 'insert-at', 'insert-at-play'},
         ['screenshot-to-file'] = {'subtitles', 'video', 'window', 'each-frame'},
+        ['screenshot-raw'] = {'bgr0', 'bgra', 'rgba', 'rgba64'},
         ['seek'] = {'relative', 'absolute', 'absolute-percent',
                     'relative-percent', 'keyframes', 'exact'},
         ['sub-add'] = {'select', 'auto', 'cached'},
@@ -1710,12 +1724,21 @@ local function undefine_key_bindings()
     key_bindings = {}
 end
 
+local function pause_playback()
+    was_playing = not mp.get_property_native('pause')
+
+    if opts.pause_on_open and was_playing then
+        mp.set_property_native('pause', true)
+    end
+end
+
 -- Set the REPL visibility ("enable", Esc)
 set_active = function (active)
     if active == repl_active then return end
     if active then
         repl_active = true
         insert_mode = false
+        pause_playback()
         define_key_bindings()
 
         if not input_caller then
@@ -1733,6 +1756,10 @@ set_active = function (active)
         log_buffers[id] = {}
         unbind_mouse()
     else
+        if opts.pause_on_open and was_playing then
+            mp.set_property_native('pause', false)
+        end
+
         repl_active = false
         suggestion_buffer = {}
         undefine_key_bindings()
@@ -1820,16 +1847,8 @@ mp.register_script_message('get-input', function (script_name, args)
         for i, item in ipairs(args.items) do
             selectable_items[i] = item:gsub("[\r\n].*", "⋯"):sub(1, 300)
         end
-        handle_edit()
-        selected_match = args.default_item or 1
         default_item = args.default_item
-
-        local max_lines = calculate_max_log_lines()
-        first_match_to_print = math.max(1, selected_match - math.floor(max_lines / 2) + 1)
-        if first_match_to_print > #selectable_items - max_lines + 2 then
-            first_match_to_print = math.max(1, #selectable_items - max_lines + 1)
-        end
-
+        handle_edit()
         bind_mouse()
     end
 
@@ -1838,7 +1857,7 @@ mp.register_script_message('get-input', function (script_name, args)
 end)
 
 mp.register_script_message('log', function (message)
-    -- input.get's edited handler is invoked after submit, so avoid modifying
+    -- input.get edited handler is invoked after submit, so avoid modifying
     -- the default log.
     if input_caller == nil then
         return

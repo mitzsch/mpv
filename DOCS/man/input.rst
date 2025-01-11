@@ -336,7 +336,7 @@ Playback Control
 
     Using it without any arguments gives you the default behavior.
 
-``sub-seek <skip> <flags>``
+``sub-seek <skip> [<flags>]``
     Change video and audio position such that the subtitle event after
     ``<skip>`` subtitle events is displayed. For example, ``sub-seek 1`` skips
     to the next subtitle, ``sub-seek -1`` skips to the previous subtitles, and
@@ -447,7 +447,7 @@ Property Manipulation
 Playlist Manipulation
 ~~~~~~~~~~~~~~~~~~~~~
 
-``playlist-next <flags>``
+``playlist-next [<flags>]``
     Go to the next entry on the playlist.
 
     First argument:
@@ -457,7 +457,7 @@ Playlist Manipulation
     force
         Terminate playback if there are no more files on the playlist.
 
-``playlist-prev <flags>``
+``playlist-prev [<flags>]``
     Go to the previous entry on the playlist.
 
     First argument:
@@ -649,7 +649,7 @@ Track Manipulation
 
     This works by unloading and re-adding the subtitle track.
 
-``sub-step <skip> <flags>``
+``sub-step <skip> [<flags>]``
     Change subtitle timing such, that the subtitle event after the next
     ``<skip>`` subtitle events is displayed. ``<skip>`` can be negative to step
     backwards.
@@ -1348,7 +1348,7 @@ Scripting Commands
 Screenshot Commands
 ~~~~~~~~~~~~~~~~~~~
 
-``screenshot <flags>``
+``screenshot [<flags>]``
     Take a screenshot.
 
     Multiple flags are available (some can be combined with ``+``):
@@ -1382,7 +1382,7 @@ Screenshot Commands
     On success, returns a ``mpv_node`` with a ``filename`` field set to the
     saved screenshot location.
 
-``screenshot-to-file <filename> <flags>``
+``screenshot-to-file <filename> [<flags>]``
     Take a screenshot and save it to a given file. The format of the file will
     be guessed by the extension (and ``--screenshot-format`` is ignored - the
     behavior when the extension is missing or unknown is arbitrary).
@@ -1395,21 +1395,38 @@ Screenshot Commands
     Like all input command parameters, the filename is subject to property
     expansion as described in `Property Expansion`_.
 
-``screenshot-raw [<flags>]``
+``screenshot-raw [<flags> [<format>]]``
     Return a screenshot in memory. This can be used only through the client
     API. The MPV_FORMAT_NODE_MAP returned by this command has the ``w``, ``h``,
-    ``stride`` fields set to obvious contents. The ``format`` field is set to
-    ``bgr0`` by default. This format is organized as ``B8G8R8X8`` (where ``B``
-    is the LSB). The contents of the padding ``X`` are undefined. The ``data``
-    field is of type MPV_FORMAT_BYTE_ARRAY with the actual image data. The image
-    is freed as soon as the result mpv_node is freed. As usual with client API
-    semantics, you are not allowed to write to the image data.
+    ``stride`` fields set to obvious contents.
+
+    The ``format`` field is set to the format of the screenshot image data.
+    This can be controlled by the ``format`` argument. The format can be one of
+    the following:
+
+    bgr0 (default)
+        This format is organized as ``B8G8R8X8`` (where ``B`` is the LSB).
+        The contents of the padding ``X`` are undefined.
+    bgra
+        This format is organized as ``B8G8R8A8`` (where ``B`` is the LSB).
+    rgba
+        This format is organized as ``R8G8B8A8`` (where ``R`` is the LSB).
+    rgba64
+        This format is organized as ``R16G16B16A16`` (where ``R`` is the LSB).
+        Each component occupies 2 bytes per pixel.
+        When this format is used, the image data will be high bit depth, and
+        ``--screenshot-high-bit-depth`` is ignored.
+
+    The ``data`` field is of type MPV_FORMAT_BYTE_ARRAY with the actual image
+    data. The image is freed as soon as the result mpv_node is freed. As usual
+    with client API semantics, you are not allowed to write to the image data.
 
     The ``stride`` is the number of bytes from a pixel at ``(x0, y0)`` to the
-    pixel at ``(x0, y0 + 1)``. This can be larger than ``w * 4`` if the image
+    pixel at ``(x0, y0 + 1)``. This can be larger than ``w * bpp`` if the image
     was cropped, or if there is padding. This number can be negative as well.
-    You access a pixel with ``byte_index = y * stride + x * 4`` (assuming the
-    ``bgr0`` format).
+    You access a pixel with ``byte_index = y * stride + x * bpp``.
+    Here, ``bpp`` is the number of bytes per pixel, which is 8 for ``rgba64``
+    format and 4 for other formats.
 
     The ``flags`` argument is like the first argument to ``screenshot`` and
     supports ``subtitles``, ``video``, ``window``.
@@ -2268,9 +2285,8 @@ Property list
         Number of editions. If there are no editions, this can be 0 or 1 (1
         if there's a useless dummy edition).
 
-    ``edition-list/N/id`` (RW)
-        Edition ID as integer. Use this to set the ``edition`` property.
-        Currently, this is the same as the edition index.
+    ``edition-list/N/id``
+        Edition ID as integer. Currently, this is the same as the edition index.
 
     ``edition-list/N/default``
         Whether this is the default edition.
@@ -3736,6 +3752,11 @@ Property list
 ``working-directory``
     The working directory of the mpv process. Can be useful for JSON IPC users,
     because the command line player usually works with relative paths.
+
+``current-watch-later-dir``
+    The directory in which watch later config files are stored. This returns
+    ``--watch-later-dir``, or the default directory if ``--watch-later-dir`` has
+    not been modified, with tilde placeholders expanded.
 
 ``protocol-list``
     List of protocol prefixes potentially recognized by the player. They are

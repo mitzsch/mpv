@@ -197,7 +197,7 @@ static bool copy_mtime(const char *f1, const char *f2)
     return true;
 }
 
-static char *mp_get_playback_resume_dir(struct MPContext *mpctx)
+char *mp_get_playback_resume_dir(struct MPContext *mpctx)
 {
     char *wl_dir = mpctx->opts->watch_later_dir;
     if (wl_dir && wl_dir[0]) {
@@ -472,4 +472,3 @@ struct playlist_entry *mp_check_playlist_resume(struct MPContext *mpctx,
     }
     return NULL;
 }
-
