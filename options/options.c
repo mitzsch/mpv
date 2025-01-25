@@ -150,6 +150,7 @@ static const m_option_t mp_vo_opt_list[] = {
     {"fs", OPT_ALIAS("fullscreen")},
     {"input-cursor-passthrough", OPT_BOOL(cursor_passthrough)},
     {"native-keyrepeat", OPT_BOOL(native_keyrepeat)},
+    {"input-ime", OPT_BOOL(input_ime)},
     {"panscan", OPT_FLOAT(panscan), M_RANGE(0.0, 1.0)},
     {"video-zoom", OPT_FLOAT(zoom), M_RANGE(-20.0, 20.0)},
     {"video-pan-x", OPT_FLOAT(pan_x)},
@@ -259,6 +260,7 @@ const struct m_sub_options vo_sub_opts = {
         .keepaspect = true,
         .keepaspect_window = true,
         .native_fs = true,
+        .input_ime = true,
         .taskbar_progress = true,
         .show_in_taskbar = true,
         .border = true,
@@ -634,7 +636,7 @@ static const m_option_t mp_opts[] = {
     {"prefetch-playlist", OPT_BOOL(prefetch_open)},
     {"cache-pause", OPT_BOOL(cache_pause)},
     {"cache-pause-initial", OPT_BOOL(cache_pause_initial)},
-    {"cache-pause-wait", OPT_FLOAT(cache_pause_wait), M_RANGE(0, DBL_MAX)},
+    {"cache-pause-wait", OPT_FLOAT(cache_pause_wait), M_RANGE(0, FLT_MAX)},
 
 #if HAVE_DVBIN
     {"dvbin", OPT_SUBSTRUCT(stream_dvb_opts, stream_dvb_conf)},
