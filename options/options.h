@@ -277,6 +277,8 @@ typedef struct MPOpts {
     bool ignore_path_in_watch_later_config;
     char *watch_later_dir;
     char **watch_later_options;
+    bool save_watch_history;
+    char *watch_history_path;
     bool pause;
     int keep_open;
     bool keep_open_pause;
@@ -360,6 +362,8 @@ typedef struct MPOpts {
 
     struct vd_lavc_params *vd_lavc_params;
     struct ad_lavc_params *ad_lavc_params;
+
+    struct hwdec_opts *hwdec_opts;
 
     struct input_opts *input_opts;
 

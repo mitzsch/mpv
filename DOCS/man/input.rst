@@ -356,18 +356,40 @@ Playback Control
     events that have already been displayed, or are within a short prefetch
     range. See `Cache`_ for details on how to control the available prefetch range.
 
-``frame-step``
-    Play one frame, then pause. Does nothing with audio-only playback.
+
+``frame-step [<frames>] [<flags>]``
+    Go forward or backwards by a given amount of frames. If ``<frames>`` is
+    omitted, the value is assumed to be ``1``.
+
+    The second argument consists of flags controlling the frameskip mode:
+
+    play (default)
+        Play the video forward by the desired amount of frames and then pause.
+        This only works with a positive value (i.e. frame stepping forwards).
+    seek
+        Perform a very exact seek that attempts to seek by the desired amount
+        of frames. If ``<frames>`` is ``-1``, this will go exactly to the
+        previous frame.
+
+    Note that the default frameskip mode, play, is more accurate but can be
+    slow depending on how many frames you are skipping (i.e. skipping forward
+    100 frames will play 100 frames of video before stopping). This mode only
+    works when going forwards. Frame stepping back always performs a seek.
+
+    When using seek mode, this can still be very slow (it tries to be precise,
+    not fast), and sometimes fails to behave as expected. How well this works
+    depends on whether precise seeking works correctly (e.g. see the
+    ``--hr-seek-demuxer-offset`` option). Video filters or other video
+    post-processing that modifies timing of frames (e.g. deinterlacing) should
+    usually work, but might make framestepping silently behave incorrectly in
+    corner cases. Using ``--hr-seek-framedrop=no`` should help, although it
+    might make precise seeking slower. Also if the video is VFR, framestepping
+    using seeks will probably not work correctly except for the ``-1`` case.
+
+    This does not work with audio-only playback.
 
 ``frame-back-step``
-    Go back by one frame, then pause. Note that this can be very slow (it tries
-    to be precise, not fast), and sometimes fails to behave as expected. How
-    well this works depends on whether precise seeking works correctly (e.g.
-    see the ``--hr-seek-demuxer-offset`` option). Video filters or other video
-    post-processing that modifies timing of frames (e.g. deinterlacing) should
-    usually work, but might make backstepping silently behave incorrectly in
-    corner cases. Using ``--hr-seek-framedrop=no`` should help, although it
-    might make precise seeking slower.
+    Calls ``frame-step`` with a value of ``-1`` and the ``seek`` flag.
 
     This does not work with audio-only playback.
 
@@ -2087,10 +2109,7 @@ Property list
     Process-id of mpv.
 
 ``path``
-    Full path of the currently played file. Usually this is exactly the same
-    string you pass on the mpv command line or the ``loadfile`` command, even
-    if it's a relative path. If you expect an absolute path, you will have to
-    determine it yourself, for example by using the ``normalize-path`` command.
+    Full absolute path of the currently played file.
 
 ``stream-open-filename``
     The full path to the currently played media. This is different from
@@ -3351,6 +3370,10 @@ Property list
         Dolby Vision profile and level. May not be available if the container
         does not provide this information.
 
+    ``track-list/N/metadata``,
+        Works like the ``metadata`` property, but it accesses metadata that is
+        set per track/stream instead of global values for the entire file.
+
     When querying the property with the client API using ``MPV_FORMAT_NODE``,
     or with Lua ``mp.get_property_native``, this will return a mpv_node with
     the following contents:
@@ -3404,6 +3427,8 @@ Property list
                 "replaygain-album-gain" MPV_FORMAT_DOUBLE
                 "dolby-vision-profile" MPV_FORMAT_INT64
                 "dolby-vision-level" MPV_FORMAT_INT64
+                "metadata"           MPV_FORMAT_NODE_MAP
+                    (key and string value for each metadata entry)
 
 ``current-tracks/...``
     This gives access to currently selected tracks. It redirects to the correct
@@ -3670,6 +3695,16 @@ Property list
     The player itself does not use any data in it (although some builtin scripts may).
     The property is not preserved across player restarts.
 
+    Sub-paths can be accessed directly; e.g. ``user-data/my-script/state/a`` can be
+    read, written, or observed.
+
+    The top-level object itself cannot be written directly; write to sub-paths instead.
+
+    Converting this property or its sub-properties to strings will give a JSON
+    representation. If converting a leaf-level object (i.e. not a map or array)
+    and not using raw mode, the underlying content will be given (e.g. strings will be
+    printed directly, rather than quoted and JSON-escaped).
+
     The following sub-paths are reserved for internal uses or have special semantics:
     ``user-data/osc``, ``user-data/mpv``. Unless noted otherwise, the semantics of
     any properties under these sub-paths can change at any time and may not be relied
@@ -3684,16 +3719,6 @@ Property list
         the left, right, top, and bottom margins respectively.
         Values are between 0.0 and 1.0, normalized to window width/height.
 
-    Sub-paths can be accessed directly; e.g. ``user-data/my-script/state/a`` can be
-    read, written, or observed.
-
-    The top-level object itself cannot be written directly; write to sub-paths instead.
-
-    Converting this property or its sub-properties to strings will give a JSON
-    representation. If converting a leaf-level object (i.e. not a map or array)
-    and not using raw mode, the underlying content will be given (e.g. strings will be
-    printed directly, rather than quoted and JSON-escaped).
-
     ``user-data/mpv/ytdl``
         Data shared by the builtin ytdl hook script.
 
@@ -3706,6 +3731,9 @@ Property list
             Result of executing ytdl to retrieve the JSON data of the URL being
             loaded. The format is the same as ``subprocess``'s result, capturing
             stdout and stderr.
+
+    ``user-data/mpv/console/open``
+        Whether the console is open.
 
 ``menu-data`` (RW)
     This property stores the raw menu definition. See `Context Menu`_ section for details.
@@ -3968,10 +3996,36 @@ Property list
         The text content in the clipboard (Windows, Wayland and macOS only).
         Writing to this property sets the text clipboard content (Windows only).
 
+    ``clipboard/text-primary``
+        The text content in the primary selection (Wayland only).
+
     .. note::
 
-        On Wayland, the clipboard content is only updated when the compositor
-        sends a selection data offer (typically when VO window is focused).
+        On Wayland with the ``vo`` clipboard backend, the clipboard content is
+        only updated when the compositor sends a selection data offer
+        (typically when VO window is focused). The ``wayland`` backend typically
+        does not have this limitation.
+        See ``current-clipboard-backend`` property for more details.
+
+``current-clipboard-backend``
+    A string containing the currently active clipboard backend.
+    The following clipboard backends are implemented:
+
+    ``win32``
+        Windows backend.
+
+    ``mac``
+        macOS backend.
+
+    ``wayland``
+        Wayland backend. This backend is only available if the compositor
+        supports the ``zwlr_data_control_manager_v1`` protocol.
+
+    ``vo``
+        VO backend. Requires an active VO window, and support differs across
+        platforms. Currently, this is used as a fallback for Wayland
+        compositors without support for the ``zwlr_data_control_manager_v1``
+        protocol.
 
 Inconsistencies between options and properties
 ----------------------------------------------

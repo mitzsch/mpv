@@ -257,6 +257,7 @@ const struct m_sub_options demux_mkv_conf = {
         .subtitle_preroll_secs_index = 10.0,
         .probe_start_time = true,
     },
+    .change_flags = UPDATE_DEMUXER,
 };
 
 #define REALHEADER_SIZE    16
@@ -1941,6 +1942,13 @@ static int demux_mkv_open_audio(demuxer_t *demuxer, mkv_track_t *track)
         } else if (!strcmp(track->codec_id, "A_REAL/DNET")) {
             sh_a->codec = "ac3";
         } else {
+            goto error;
+        }
+
+        // Limit buffer size to 128 MiB to avoid excessive memory allocation on malformed files.
+        if (track->sub_packet_h * track->audiopk_size > (128 << 20)) {
+            MP_WARN(demuxer, "RealAudio packet size too big (%" PRIu32 " MiB) - skipping track\n",
+                    track->sub_packet_h * track->audiopk_size);
             goto error;
         }
 

@@ -20,13 +20,18 @@ The Interface
 
 ::
 
-    +---------+----------+------------------------------------------+----------+
-    | pl prev | pl next  |  title                                   |    cache |
-    +------+--+---+------+---------+-----------+------+-------+-----+-----+----+
+    +------+---------+---------+-----------------------------------------------+
+    | menu | pl prev | pl next | title                                   cache |
+    +------+------+------+---------+-----------+------+-------+-----+-----+----+
     | play | skip | skip | time    |  seekbar  | time | audio | sub | vol | fs |
     |      | back | frwd | elapsed |           | left |       |     |     |    |
     +------+------+------+---------+-----------+------+-------+-----+-----+----+
 
+
+menu
+    =============   ================================================
+    left-click      open the menu
+    =============   ================================================
 
 pl prev
     =============   ================================================
@@ -353,6 +358,12 @@ Configurable Options
 
     Also supports ``never`` and ``always``
 
+``visibility_modes``
+    Default: never_auto_always
+
+    The list of visibility modes to cycle through when calling the
+    osc-visibility cycle script message. Modes are separated by ``_``.
+
 ``boxmaxchars``
     Default: 80
 
@@ -508,6 +519,12 @@ Configurable Options
 The following options configure what commands are run when the buttons are
 clicked. ``mbtn_mid`` commands are also triggered with ``shift+mbtn_left``.
 
+``menu_mbtn_left_command=script-binding select/menu; script-message-to osc osc-hide``
+
+``menu_mbtn_mid_command=``
+
+``menu_mbtn_right_command=``
+
 ``playlist_prev_mbtn_left_command=playlist-prev; show-text ${playlist} 3000``
 
 ``playlist_prev_mbtn_mid_command=show-text ${playlist} 3000``
@@ -603,7 +620,8 @@ in ``input.conf``, or sent by other scripts.
 
 ``osc-visibility``
     Controls visibility mode ``never`` / ``auto`` (on mouse move) / ``always``
-    and also ``cycle`` to cycle between the modes.
+    and also ``cycle`` to cycle between the modes. If a second argument is
+    passed (any value), then the output on the OSD will be silenced.
 
 ``osc-show``
     Triggers the OSC to show up, just as if user moved mouse.
@@ -621,4 +639,5 @@ to set auto mode (the default) with ``b``::
 
 ``osc-idlescreen``
     Controls the visibility of the mpv logo on idle. Valid arguments are ``yes``,
-    ``no``, and ``cycle`` to toggle between yes and no.
+    ``no``, and ``cycle`` to toggle between yes and no. If a second argument is
+    passed (any value), then the output on the OSD will be silenced.

@@ -328,16 +328,23 @@ g-l
 g-d
     Select an audio device.
 
+g-h
+    Select a file from the watch history. Requires ``--save-watch-history``.
+
 g-w
     Select a file from watch later config files (see `RESUMING PLAYBACK`_) to
-    resume playing. Requires ``--write-filename-in-watch-later-config``. This
-    doesn't work with ``--ignore-path-in-watch-later-config``.
+    resume playing. Requires ``--write-filename-in-watch-later-config``.
 
 g-b
     Select a defined input binding.
 
 g-r
     Show the values of all properties.
+
+MENU
+    Show a menu with miscellaneous entries.
+
+See `SELECT`_ for more information.
 
 (The following keys are valid if you have a keyboard with multimedia keys.)
 
@@ -646,6 +653,7 @@ Suffix        Meaning
 -add          Append 1 or more items (same syntax as -set)
 -pre          Prepend 1 or more items (same syntax as -set)
 -clr          Clear the option (remove all items)
+-del          Delete 1 or more items if present (same syntax as -set)
 -remove       Delete item if present (does not interpret escapes)
 -toggle       Append an item, or remove it if it already exists (no escapes)
 ============= ===============================================
@@ -668,6 +676,8 @@ Suffix        Meaning
 -set          Set a list of items (using ``,`` as separator)
 -append       Append a single item (escapes for the key, no escapes for the value)
 -add          Append 1 or more items (same syntax as -set)
+-clr          Clear the option (remove all items)
+-del          Delete 1 or more keys if present (same syntax as -set)
 -remove       Delete item by key if present (does not interpret escapes)
 ============= ===============================================
 
@@ -697,7 +707,7 @@ Suffix        Meaning
 -add          Append 1 or more items (same syntax as -set)
 -pre          Prepend 1 or more items (same syntax as -set)
 -clr          Clear the option (remove all items)
--remove       Delete item if present
+-remove       Delete 1 or items if present (same syntax as -set)
 -toggle       Append an item, or remove it if it already exists
 -help         Pseudo operation that prints a help text to the terminal
 ============= ===============================================
@@ -707,10 +717,9 @@ General
 
 Without suffix, the operation used is normally ``-set``.
 
-Although some operations allow specifying multiple items, using this is strongly
-discouraged and deprecated, except for ``-set``. There is a chance that
-operations like ``-add`` and ``-pre`` will work like ``-append`` and accept a
-single, unescaped item only (so the ``,`` separator will not be interpreted and
+Some operations like ``-add`` and ``-pre`` specify multiple items, but be
+aware that you may need to escape the arguments. ``-append`` accepts a single,
+unescaped item only (so the ``,`` separator will not be interpreted and
 is passed on as part of the value).
 
 Some options (like ``--sub-file``, ``--audio-file``, ``--glsl-shader``) are
@@ -1502,6 +1511,8 @@ works like in older mpv releases:
 .. include:: stats.rst
 
 .. include:: console.rst
+
+.. include:: select.rst
 
 .. include:: lua.rst
 
