@@ -323,7 +323,7 @@ void playlist_set_stream_flags(struct playlist *pl, int flags)
         pl->entries[n]->stream_flags = flags;
 }
 
-static int64_t playlist_transfer_entries_to(struct playlist *pl, int dst_index,
+int64_t playlist_transfer_entries_to(struct playlist *pl, int dst_index,
                                             struct playlist *source_pl)
 {
     assert(pl != source_pl);
