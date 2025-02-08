@@ -1572,7 +1572,7 @@ Video
 
     This option has no effect if ``--video-unscaled`` option is used.
 
-``--video-aspect-override=<ratio|no>``
+``--video-aspect-override=<ratio|no|original>``
     Override video aspect ratio, in case aspect information is incorrect or
     missing in the file being played.
 
@@ -1580,7 +1580,8 @@ Video
 
     :0:  disable aspect ratio handling, pretend the video has square pixels
     :no: same as ``0``
-    :-1: use the video stream or container aspect (default)
+    :original: use the video stream or container aspect (default)
+    :-1: same as ``1`` (deprecated)
 
     But note that handling of these special values might change in the future.
 
@@ -6057,6 +6058,9 @@ them.
     supported (for example, on Windows 7 without the platform update), mpv will
     automatically fall back to the older bitblt presentation model.
 
+    flip-model needs presentation needs to be disabled for background
+    transparency to work.
+
 ``--d3d11-sync-interval=<0..4>``
     Schedule each frame to be presented for this number of VBlank intervals.
     (default: 1) Setting to 1 will enable VSync, setting to 0 will disable it.
@@ -6901,10 +6905,12 @@ them.
         Fully replaces the color decoding. A LUT of this type should ingest the
         image's native colorspace and output normalized non-linear RGB.
 
-``--target-colorspace-hint``
+``--target-colorspace-hint=<auto|yes|no>``
     Automatically configure the output colorspace of the display to pass
     through the input values of the stream (e.g. for HDR passthrough), if
-    possible. Requires a supporting driver and ``--vo=gpu-next``.
+    possible. In ``auto`` mode, the target colorspace is only set,
+    if the display signals support for HDR colorspace.
+    Requires a supporting driver and ``--vo=gpu-next``. (Default: ``no``)
 
 ``--target-prim=<value>``
     Specifies the primaries of the display. Video colors will be adapted to
@@ -7002,7 +7008,8 @@ them.
 
     In ``auto`` mode (the default), the chosen peak is an appropriate value
     based on the TRC in use. For SDR curves, it uses 203. For HDR curves, it
-    uses 203 * the transfer function's nominal peak.
+    uses 203 * the transfer function's nominal peak. If available, it will use
+    the target display's peak brightness as reported by the display.
 
     .. note::
 
@@ -7027,6 +7034,7 @@ them.
     black point. Used in black point compensation during HDR tone-mapping.
     ``auto`` is the default and assumes 1000:1 contrast as a typical SDR display
     would have or an infinite contrast when HDR ``--target-trc`` is used.
+    If supported by the API, display contrast will be used as reported.
     ``inf`` contrast specifies display with perfect black level, in practice OLED.
     (Only for ``--vo=gpu-next``)
 
@@ -7050,7 +7058,8 @@ them.
     Valid values are:
 
     auto
-        Choose the best curve according to internal heuristics. (Default)
+        Maps to ``bt.2390`` when using ``--vo=gpu``, and to ``spline`` with
+        ``--vo=gpu-next``. (Default)
     clip
         Hard-clip any out-of-range values. Use this when you care about
         perfect color accuracy for in-range values at the cost of completely
@@ -7381,6 +7390,8 @@ them.
         Blend the frame against a 16x16 gray/white tiles background (default).
     none
         Do not blend the frame and leave the alpha as is.
+
+    Background transparency on d3d11 requires ``--d3d11-flip=no``.
 
     Before mpv 0.38.0, this option used to accept a color value specifying the
     background color. This is now done by the ``--background-color`` option.
