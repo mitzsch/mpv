@@ -2563,9 +2563,10 @@ Property list
 ``ao-volume`` (RW)
     System volume. This property is available only if mpv audio output is
     currently active, and only if the underlying implementation supports volume
-    control. What this option does depends on the API. For example, on ALSA
-    this usually changes system-wide audio, while with PulseAudio this controls
-    per-application volume.
+    control. What this option does, or how the value is interpreted depends on
+    the API. For example, on ALSA this usually changes system-wide audio volume
+    on a linear curve, while with PulseAudio this controls per-application volume
+    on a cubic curve.
 
 ``ao-mute`` (RW)
     Similar to ``ao-volume``, but controls the mute state. May be unimplemented
@@ -4019,13 +4020,17 @@ Property list
 
     ``wayland``
         Wayland backend. This backend is only available if the compositor
-        supports the ``zwlr_data_control_manager_v1`` protocol.
+        supports the ``ext-data-control-v1`` protocol.
 
     ``vo``
         VO backend. Requires an active VO window, and support differs across
         platforms. Currently, this is used as a fallback for Wayland
-        compositors without support for the ``zwlr_data_control_manager_v1``
+        compositors without support for the ``ext-data-control-v1``
         protocol.
+
+``clock``
+
+    The current local time in hour:minutes format.
 
 Inconsistencies between options and properties
 ----------------------------------------------
