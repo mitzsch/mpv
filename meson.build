@@ -339,20 +339,14 @@ if posix
     flags += ['-D_GNU_SOURCE']
 endif
 
-if cc.has_link_argument('-Wl,-z,noexecstack')
-    link_flags += '-Wl,-z,noexecstack'
-endif
-
-if cc.has_link_argument('-Wl,--nxcompat,--no-seh,--dynamicbase')
-    link_flags += '-Wl,--nxcompat,--no-seh,--dynamicbase'
-endif
+link_flags += cc.get_supported_link_arguments(['-Wl,--nxcompat,--no-seh,--dynamicbase',
+                                               '-Wl,-z,noexecstack'])
 
 features += {'build-date': get_option('build-date')}
 if not features['build-date']
     flags += '-DNO_BUILD_TIMESTAMPS'
 endif
 
-features += {'ta-leak-report': get_option('ta-leak-report')}
 features += {'disable-packet-pool': get_option('disable-packet-pool')}
 
 libdl = dependency('dl', required: false)
@@ -454,7 +448,7 @@ features += {'ppoll': cc.has_function('ppoll', args: '-D_GNU_SOURCE',
 features += {'memrchr': cc.has_function('memrchr', args: '-D_GNU_SOURCE',
                                         prefix: '#include <string.h>')}
 
-cd_devices = {
+optical_devices = {
     'windows': 'D:',
     'cygwin': 'D:',
     'darwin': '/dev/disk1',
@@ -462,24 +456,10 @@ cd_devices = {
     'openbsd': '/dev/rcd0c',
     'linux': '/dev/sr0',
 }
-if host_machine.system() in cd_devices
-    cd_device = cd_devices[host_machine.system()]
+if host_machine.system() in optical_devices
+    optical_device = optical_devices[host_machine.system()]
 else
-    cd_device = '/dev/cdrom'
-endif
-
-dvd_devices = {
-    'windows': 'D:',
-    'cygwin': 'D:',
-    'darwin': '/dev/diskN',
-    'freebsd': '/dev/cd0',
-    'openbsd': '/dev/rcd0c',
-    'linux': '/dev/sr0',
-}
-if host_machine.system() in cd_devices
-    dvd_device = dvd_devices[host_machine.system()]
-else
-    dvd_device = '/dev/dvd'
+    optical_device = '/dev/cdrom'
 endif
 
 features += {'android': host_machine.system() == 'android'}
@@ -949,7 +929,7 @@ if features['direct3d']
     sources += files('video/out/vo_direct3d.c')
 endif
 
-drm = dependency('libdrm', version: '>= 2.4.109', required: get_option('drm'))
+drm = dependency('libdrm', version: '>= 2.4.105', required: get_option('drm'))
 libdisplay_info = dependency('libdisplay-info', version: '>= 0.1.1', required: get_option('drm'))
 features += {'drm': drm.found() and libdisplay_info.found() and
              (features['vt.h'] or features['consio.h'] or features['wsdisplay-usl-io.h'])}
@@ -1717,8 +1697,7 @@ endif
 # Set config.h
 conf_data = configuration_data()
 conf_data.set_quoted('CONFIGURATION', meson.build_options())
-conf_data.set_quoted('DEFAULT_DVD_DEVICE', dvd_device)
-conf_data.set_quoted('DEFAULT_CDROM_DEVICE', cd_device)
+conf_data.set_quoted('DEFAULT_OPTICAL_DEVICE', optical_device)
 
 # Loop over all features in the build, create a define and add them to config.h
 feature_keys = []
@@ -1835,7 +1814,9 @@ if get_option('cplayer')
 
     if win32 and get_option('win32-subsystem') != 'console'
         wrapper_sources= 'osdep/win32-console-wrapper.c'
-        executable('mpv', wrapper_sources, c_args: '-municode', link_args: '-municode',
+        executable('mpv', wrapper_sources, c_args: ['-municode', '-fno-asynchronous-unwind-tables'],
+                   link_args: ['-municode', '-nostartfiles', '-nodefaultlibs'],
+                   override_options: ['b_sanitize=none'],
                    name_suffix: 'com', install: true)
     endif
 

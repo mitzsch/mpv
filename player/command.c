@@ -2000,9 +2000,6 @@ static int get_track_entry(int item, int action, void *arg, void *ctx)
     struct MPContext *mpctx = ctx;
     struct track *track = mpctx->tracks[item];
 
-    char *external_filename = mp_normalize_user_path(NULL, mpctx->global,
-                                                     track->external_filename);
-
     struct mp_codec_params p =
         track->stream ? *track->stream->codec : (struct mp_codec_params){0};
 
@@ -2054,8 +2051,8 @@ static int get_track_entry(int item, int action, void *arg, void *ctx)
         {"external",    SUB_PROP_BOOL(track->is_external)},
         {"selected",    SUB_PROP_BOOL(track->selected)},
         {"main-selection", SUB_PROP_INT(order), .unavailable = order < 0},
-        {"external-filename", SUB_PROP_STR(external_filename),
-                        .unavailable = !external_filename},
+        {"external-filename", SUB_PROP_STR(track->external_filename),
+                        .unavailable = !track->external_filename},
         {"ff-index",    SUB_PROP_INT(track->ff_index)},
         {"hls-bitrate", SUB_PROP_INT(track->hls_bitrate),
                         .unavailable = !track->hls_bitrate},
@@ -2129,7 +2126,6 @@ static int get_track_entry(int item, int action, void *arg, void *ctx)
     }
 
 done:
-    talloc_free(external_filename);
     talloc_free(tag_list);
     return ret;
 }
@@ -3134,7 +3130,7 @@ static int mp_property_video_aspect_override(void *ctx, struct m_property *prop,
             *(char **)arg = talloc_asprintf(NULL, "16:10");
         else if (doubles_equal(aspect_ratio, 4.0 / 3.0))
             *(char **)arg = talloc_asprintf(NULL, "4:3");
-        else if (doubles_equal(aspect_ratio, -1.0))
+        else if (aspect_ratio < 0.0)
             *(char **)arg = talloc_asprintf(NULL, "Original");
         else
             *(char **)arg = talloc_asprintf(NULL, "%.3f", aspect_ratio);
@@ -5735,18 +5731,20 @@ static void cmd_frame_step(void *p)
         return;
     }
 
-    if (flags) {
+    if (flags == 1) {
         if (!cmd->cmd->is_up)
-            add_step_frame(mpctx, frames, flags);
+            add_step_frame(mpctx, frames, true);
     } else {
         if (cmd->cmd->is_up) {
             if (mpctx->step_frames < 1)
                 set_pause_state(mpctx, true);
         } else {
+            if (flags == 2)
+                step_frame_mute(mpctx, true);
             if (cmd->cmd->repeated) {
                 set_pause_state(mpctx, false);
             } else {
-                add_step_frame(mpctx, frames, flags);
+                add_step_frame(mpctx, frames, false);
             }
         }
     }
@@ -7042,7 +7040,8 @@ const struct mp_cmd_def mp_cmds[] = {
             {"frames", OPT_INT(v.i), OPTDEF_INT(1)},
             {"flags", OPT_CHOICE(v.i,
                     {"play", 0},
-                    {"seek", 1}),
+                    {"seek", 1},
+                    {"mute", 2}),
                     .flags = MP_CMD_OPT_ARG},
         },
         .allow_auto_repeat = true,
@@ -7688,13 +7687,12 @@ static void update_track_switch(struct MPContext *mpctx, int order, int type)
     mp_wakeup_core(mpctx);
 }
 
-void mp_option_change_callback(void *ctx, struct m_config_option *co, int flags,
+void mp_option_change_callback(void *ctx, struct m_config_option *co, uint64_t flags,
                                bool self_update)
 {
     struct MPContext *mpctx = ctx;
     struct MPOpts *opts = mpctx->opts;
-    bool init = !co;
-    void *opt_ptr = init ? NULL : co->data; // NULL on start
+    void *opt_ptr = !co ? NULL : co->data; // NULL on start
 
     if (co)
         mp_notify_property(mpctx, co->name);
@@ -7704,6 +7702,35 @@ void mp_option_change_callback(void *ctx, struct m_config_option *co, int flags,
     if (self_update)
         return;
 
+    // Coalesce redundant updates and only keep the newest one.
+    bool drop = false;
+    for (int i = 0; i < mpctx->num_option_callbacks; i++) {
+        if ((mpctx->option_callbacks[i].co && opt_ptr == mpctx->option_callbacks[i].co->data) ||
+            (flags && flags == mpctx->option_callbacks[i].flags))
+            drop = true;
+        if (!drop)
+            continue;
+        if (i < mpctx->num_option_callbacks - 1)
+            mpctx->option_callbacks[i] = mpctx->option_callbacks[i + 1];
+        if (i == mpctx->num_option_callbacks - 1) {
+            mpctx->option_callbacks[i].co = co;
+            mpctx->option_callbacks[i].flags = flags;
+        }
+    }
+
+    if (!drop) {
+        struct mp_option_callback callback = {.co = co, .flags = flags};
+        MP_TARRAY_APPEND(mpctx, mpctx->option_callbacks, mpctx->num_option_callbacks, callback);
+    }
+}
+
+void mp_option_run_callback(struct MPContext *mpctx, int index)
+{
+    struct MPOpts *opts = mpctx->opts;
+    struct m_config_option *co = mpctx->option_callbacks[index].co;
+    void *opt_ptr = co ? co->data : NULL;
+    uint64_t flags = mpctx->option_callbacks[index].flags;
+
     if (flags & UPDATE_TERM)
         mp_update_logging(mpctx, false);
 
@@ -7712,8 +7739,7 @@ void mp_option_change_callback(void *ctx, struct m_config_option *co, int flags,
             struct track *track = mpctx->current_track[n][STREAM_SUB];
             struct dec_sub *sub = track ? track->d_sub : NULL;
             if (sub) {
-                int ret = sub_control(sub, SD_CTRL_UPDATE_OPTS,
-                                      (void *)(uintptr_t)flags);
+                int ret = sub_control(sub, SD_CTRL_UPDATE_OPTS, &flags);
                 if (ret == CONTROL_OK && flags & (UPDATE_SUB_FILT | UPDATE_SUB_HARD)) {
                     sub_redecode_cached_packets(sub);
                     sub_reset(sub);
@@ -7747,7 +7773,7 @@ void mp_option_change_callback(void *ctx, struct m_config_option *co, int flags,
     if (flags & UPDATE_SUB_EXTS)
         mp_update_subtitle_exts(mpctx->opts);
 
-    if (init || opt_ptr == &opts->ipc_path || opt_ptr == &opts->ipc_client) {
+    if (opt_ptr == &opts->ipc_path || opt_ptr == &opts->ipc_client) {
         mp_uninit_ipc(mpctx->ipc_ctx);
         mpctx->ipc_ctx = mp_init_ipc(mpctx->clients, mpctx->global);
     }

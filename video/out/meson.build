@@ -9,11 +9,11 @@ protocols = [[wl_protocol_dir, 'stable/presentation-time/presentation-time.xml']
              [wl_protocol_dir, 'staging/content-type/content-type-v1.xml'],
              [wl_protocol_dir, 'staging/fractional-scale/fractional-scale-v1.xml'],
              [wl_protocol_dir, 'staging/single-pixel-buffer/single-pixel-buffer-v1.xml'],
-             ['protocols', 'xx-color-management-v4.xml']]
+             [wl_protocol_dir, 'staging/xdg-activation/xdg-activation-v1.xml']]
 wl_protocols_source = []
 wl_protocols_headers = []
 
-foreach v: ['1.32', '1.39']
+foreach v: ['1.32', '1.38', '1.39', '1.41']
     features += {'wayland-protocols-' + v.replace('.', '-'):
         wayland['deps'][2].version().version_compare('>=' + v)}
 endforeach
@@ -23,8 +23,17 @@ if features['wayland-protocols-1-32']
                   [wl_protocol_dir, 'unstable/tablet/tablet-unstable-v2.xml']] # required by cursor-shape
 endif
 
+
+if features['wayland-protocols-1-38']
+    protocols += [[wl_protocol_dir, 'staging/fifo/fifo-v1.xml']]
+endif
+
 if features['wayland-protocols-1-39']
     protocols += [[wl_protocol_dir, 'staging/ext-data-control/ext-data-control-v1.xml']]
+endif
+
+if features['wayland-protocols-1-41']
+    protocols += [[wl_protocol_dir, 'staging/color-management/color-management-v1.xml']]
 endif
 
 foreach p: protocols

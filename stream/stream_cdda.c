@@ -76,8 +76,8 @@ const struct m_sub_options stream_cdda_conf = {
         {"overlap", OPT_INT(search_overlap), M_RANGE(0, 75)},
         {"toc-offset", OPT_INT(toc_offset)},
         {"skip", OPT_BOOL(skip)},
-        {"span-a", OPT_INT(span[0])},
-        {"span-b", OPT_INT(span[1])},
+        {"span-a", OPT_INT(span[0]), .deprecation_message = "--start=#N"},
+        {"span-b", OPT_INT(span[1]), .deprecation_message = "--end=#N"},
         {"cdtext", OPT_BOOL(cdtext)},
         {0}
     },
@@ -252,11 +252,13 @@ static int open_cdda(stream_t *st)
     int last_track;
 
     if (st->path[0]) {
+        MP_WARN(st, "Setting the device after the schema is deprecated. "
+                "Use --cdda-device instead.\n");
         p->device = talloc_strdup(priv, st->path);
     } else if (p->cdda_device && p->cdda_device[0]) {
         p->device = mp_get_user_path(priv, st->global, p->cdda_device);
     } else {
-        p->device = talloc_strdup(priv, DEFAULT_CDROM_DEVICE);
+        p->device = talloc_strdup(priv, DEFAULT_OPTICAL_DEVICE);
     }
 
 #if defined(__NetBSD__)

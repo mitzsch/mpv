@@ -23,6 +23,7 @@
 #include "input/event.h"
 #include "video/mp_image.h"
 #include "vo.h"
+#include "xdg-activation-v1.h"
 
 struct compositor_format;
 struct vo_wayland_seat;
@@ -89,10 +90,8 @@ struct vo_wayland_state {
     int wakeup_pipe[2];
 
     /* color-management */
-    struct xx_color_manager_v4 *color_manager;
-    struct xx_color_management_surface_v4 *color_surface;
-    struct xx_image_description_v4 *image_description;
-    struct xx_image_description_creator_params_v4 *image_creator_params;
+    struct wp_color_manager_v1 *color_manager;
+    struct wp_color_management_surface_v1 *color_surface;
     struct mp_image_params target_params;
     bool supports_icc;
     bool supports_parametric;
@@ -100,7 +99,6 @@ struct vo_wayland_state {
     bool supports_tf_power;
     bool supports_luminances;
     bool supports_display_primaries;
-    bool unsupported_colorspace;
     int primaries_map[PL_COLOR_PRIM_COUNT];
     int transfer_map[PL_COLOR_TRC_COUNT];
 
@@ -110,8 +108,10 @@ struct vo_wayland_state {
     int current_content_type;
 
     /* cursor-shape */
-    /* TODO: unvoid these if required wayland protocols is bumped to 1.32+ */
-    void *cursor_shape_manager;
+    struct wp_cursor_shape_manager_v1 *cursor_shape_manager;
+
+    /* fifo */
+    bool has_fifo;
 
     /* fractional-scale */
     struct wp_fractional_scale_manager_v1 *fractional_scale_manager;
@@ -138,10 +138,14 @@ struct vo_wayland_state {
     struct mp_present *present;
     int64_t refresh_interval;
     bool present_clock;
+    bool present_v2;
     bool use_present;
 
     /* single-pixel-buffer */
     struct wp_single_pixel_buffer_manager_v1 *single_pixel_manager;
+
+    /* xdg-activation */
+    struct xdg_activation_v1 *xdg_activation;
 
     /* xdg-decoration */
     struct zxdg_decoration_manager_v1 *xdg_decoration_manager;
