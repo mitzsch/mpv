@@ -388,10 +388,6 @@ static void destroy_osd_buffers(struct vo *vo)
     if (!vo->wl)
         return;
 
-    // Remove any existing buffer before we destroy them.
-    wl_surface_attach(vo->wl->osd_surface, NULL, 0, 0);
-    wl_surface_commit(vo->wl->osd_surface);
-
     struct priv *p = vo->priv;
     struct osd_buffer *osd_buf, *tmp;
     wl_list_for_each_safe(osd_buf, tmp, &p->osd_buffer_list, link) {
@@ -649,8 +645,8 @@ static void flip_page(struct vo *vo)
 {
     struct vo_wayland_state *wl = vo->wl;
 
-    wl_surface_commit(wl->video_surface);
     wl_surface_commit(wl->osd_surface);
+    wl_surface_commit(wl->video_surface);
     wl_surface_commit(wl->surface);
 
     if (wl->opts->wl_internal_vsync)
