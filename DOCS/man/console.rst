@@ -157,14 +157,13 @@ Configurable Options
 ``font_size``
     Default: 24
 
-    Set the font size used for the REPL and the console. This will be
-    multiplied by ``display-hidpi-scale`` when the console is not scaled with
-    the window.
+    The font size. This will be multiplied by ``display-hidpi-scale`` when the
+    console is not scaled with the window.
 
 ``border_size``
     Default: 1.65
 
-    Set the font border size used for the REPL and the console.
+    The font border size.
 
 ``background_alpha``
     Default: 80
@@ -218,6 +217,11 @@ Configurable Options
 
     The background color of the selected item.
 
+``match_color``
+    Default: ``#0088FF``
+
+    The color of characters that match the searched string.
+
 ``case_sensitive``
     Default: no on Windows, yes on other platforms.
 
@@ -227,6 +231,16 @@ Configurable Options
     Default: true
 
     Remove duplicate entries in history as to only keep the latest one.
+
+``persist_history``
+    Default: no
+
+    Whether to save the command history to a file and load it.
+
+``history_path``
+    Default: ``~~state/command_history.txt``
+
+    The file path for ``persist_history`` (see `PATHS`_).
 
 ``font_hw_ratio``
     Default: auto

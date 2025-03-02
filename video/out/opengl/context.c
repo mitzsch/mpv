@@ -77,7 +77,7 @@ const struct m_sub_options opengl_conf = {
 struct priv {
     GL *gl;
     struct mp_log *log;
-    struct ra_gl_ctx_params params;
+    struct ra_ctx_params params;
     struct opengl_opts *opts;
     struct ra_swapchain_fns fns;
     GLuint main_fb;
@@ -125,7 +125,7 @@ void ra_gl_ctx_uninit(struct ra_ctx *ctx)
 
 static const struct ra_swapchain_fns ra_gl_swapchain_fns;
 
-bool ra_gl_ctx_init(struct ra_ctx *ctx, GL *gl, struct ra_gl_ctx_params params)
+bool ra_gl_ctx_init(struct ra_ctx *ctx, GL *gl, struct ra_ctx_params params)
 {
     struct ra_swapchain *sw = ctx->swapchain = talloc_ptrtype(NULL, sw);
     *sw = (struct ra_swapchain) {
@@ -142,18 +142,6 @@ bool ra_gl_ctx_init(struct ra_ctx *ctx, GL *gl, struct ra_gl_ctx_params params)
     };
 
     sw->fns = &p->fns;
-
-    const struct ra_swapchain_fns *ext = p->params.external_swapchain;
-    if (ext) {
-        if (ext->color_depth)
-            p->fns.color_depth = ext->color_depth;
-        if (ext->start_frame)
-            p->fns.start_frame = ext->start_frame;
-        if (ext->submit_frame)
-            p->fns.submit_frame = ext->submit_frame;
-        if (ext->swap_buffers)
-            p->fns.swap_buffers = ext->swap_buffers;
-    }
 
     if (!gl->version && !gl->es)
         return false;
@@ -244,7 +232,7 @@ bool ra_gl_ctx_submit_frame(struct ra_swapchain *sw, const struct vo_frame *fram
     if (p->opts->use_glfinish)
         gl->Finish();
 
-    if (gl->FenceSync && !p->params.external_swapchain) {
+    if (gl->FenceSync) {
         GLsync fence = gl->FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         if (fence)
             MP_TARRAY_APPEND(p, p->vsync_fences, p->num_vsync_fences, fence);

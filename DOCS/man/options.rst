@@ -1067,6 +1067,10 @@ Program Behavior
     Enable the builtin script that lets you select from lists of items (default:
     yes). By default, its keybindings start with the ``g`` key.
 
+``--load-positioning=<yes|no>``
+    Enable the builtin script that provides various keybindings to pan videos
+    and images (default: yes).
+
 ``--player-operation-mode=<cplayer|pseudo-gui>``
     For enabling "pseudo GUI mode", which means that the defaults for some
     options are changed. This option should not normally be used directly, but
@@ -4202,7 +4206,7 @@ Demuxer
 
 ``--prefetch-playlist=<yes|no>``
     Prefetch next playlist entry while playback of the current entry is ending
-    (default: no).
+    (default: yes).
 
     This does not prefill the cache with the video data of the next URL.
     Prefetching video data is supported only for the current playlist entry,
@@ -4213,15 +4217,9 @@ Demuxer
     This does **not** work with URLs resolved by the ``youtube-dl`` wrapper,
     and it won't.
 
-    This can give subtly wrong results if per-file options are used, or if
-    options are changed in the time window between prefetching start and next
-    file played.
-
     This can occasionally make wrong prefetching decisions. For example, it
     can't predict whether you go backwards in the playlist, and assumes you
     won't edit the playlist.
-
-    Highly experimental.
 
 ``--force-seekable=<yes|no>``
     If the player thinks that the media is not seekable (e.g. playing from a
@@ -7923,11 +7921,39 @@ Miscellaneous
 
     Conversion is not applied to metadata that is updated at runtime.
 
-``--clipboard-enable=<yes|no>``
-    (Windows, Wayland and macOS only)
+``--clipboard-backends=<backend1,backend2,...[,]>``
+    Specify a priority list of the clipboard backends to be used.
+    You can also pass ``help`` to get a complete list of compiled in backends.
 
-    Enable native clipboard support (default: yes). This allows reading and
-    writing to the ``clipboard`` property to get and set clipboard contents.
+    If the list is not empty, it enables native clipboard support for the
+    specified backends. This allows reading and writing to the ``clipboard``
+    property to get and set clipboard contents.
+
+    Native clipboard support is enabled by default. To disable this, remove
+    all backends in this list with ``--clipboard-backends-clr``.
+
+    Note that the default clipboard backends are subject to change,
+    and must not be relied upon.
+
+    The following clipboard backends are implemented:
+
+    ``win32``
+        Windows backend.
+
+    ``mac``
+        macOS backend.
+
+    ``wayland``
+        Wayland backend. This backend is only available if the compositor
+        supports the ``ext-data-control-v1`` protocol.
+
+    ``vo``
+        VO backend. Requires an active VO window, and support differs across
+        platforms. Currently, this is used as a fallback for Wayland
+        compositors without support for the ``ext-data-control-v1``
+        protocol, or if the ``wayland`` backend is disabled.
+
+    This is an object settings list option. See `List Options`_ for details.
 
 ``--clipboard-monitor=<yes|no>``
     (Windows, Wayland and macOS only)

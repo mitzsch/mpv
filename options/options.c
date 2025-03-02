@@ -554,6 +554,7 @@ static const m_option_t mp_opts[] = {
         OPT_CHOICE(lua_load_auto_profiles, {"no", 0}, {"yes", 1}, {"auto", -1}),
         .flags = UPDATE_BUILTIN_SCRIPTS},
     {"load-select", OPT_BOOL(lua_load_select), .flags = UPDATE_BUILTIN_SCRIPTS},
+    {"load-positioning", OPT_BOOL(lua_load_positioning), .flags = UPDATE_BUILTIN_SCRIPTS},
 #endif
 
 // ------------------------- stream options --------------------
@@ -986,6 +987,7 @@ static const struct MPOpts mp_default_opts = {
     .lua_load_console = true,
     .lua_load_auto_profiles = -1,
     .lua_load_select = true,
+    .lua_load_positioning = true,
 #endif
     .auto_load_scripts = true,
     .loop_times = 1,
@@ -1004,6 +1006,7 @@ static const struct MPOpts mp_default_opts = {
     .demuxer_thread = true,
     .demux_termination_timeout = 0.1,
     .hls_bitrate = INT_MAX,
+    .prefetch_open = true,
     .cache_pause = true,
     .cache_pause_wait = 1.0,
     .ab_loop = {MP_NOPTS_VALUE, MP_NOPTS_VALUE},

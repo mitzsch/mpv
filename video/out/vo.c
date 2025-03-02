@@ -1179,6 +1179,7 @@ static MP_THREAD_VOID vo_thread(void *ptr)
         if (send_pause)
             vo->driver->control(vo, vo_paused ? VOCTRL_PAUSE : VOCTRL_RESUME, NULL);
         if (wait_until > now && redraw) {
+            vo->driver->control(vo, VOCTRL_REDRAW, NULL);
             do_redraw(vo); // now is a good time
             continue;
         }

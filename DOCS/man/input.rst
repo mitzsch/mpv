@@ -419,6 +419,10 @@ Property Manipulation
     Add the given value to the property or option. On overflow or underflow,
     clamp the property to the maximum. If ``<value>`` is omitted, assume ``1``.
 
+    Whether or not key-repeat is enabled by default depends on the property.
+    Currently properties with continuous values are repeatable by default (like
+    ``volume``), while discrete values are not (like ``osd-level``).
+
     This is a scalable command. See the documentation of ``nonscalable`` input
     command prefix in `Input Command Prefixes`_ for details.
 
@@ -2272,6 +2276,14 @@ Property list
 
 ``chapter`` (RW)
     Current chapter number. The number of the first chapter is 0.
+    A value of -1 indicates that the current playback position is before the
+    start of the first chapter,
+
+    Setting this property results in an absolute seek to the start of the
+    chapter. However, if the property is changed with ``add`` or ``cycle``
+    command which results in a decrement in value, it may go to the start of
+    the current chapter instead of the previous chapter.
+    See ``--chapter-seek-threshold`` for details.
 
 ``edition`` (RW)
     Current edition number. Setting this property to a different value will
@@ -4013,23 +4025,7 @@ Property list
 
 ``current-clipboard-backend``
     A string containing the currently active clipboard backend.
-    The following clipboard backends are implemented:
-
-    ``win32``
-        Windows backend.
-
-    ``mac``
-        macOS backend.
-
-    ``wayland``
-        Wayland backend. This backend is only available if the compositor
-        supports the ``ext-data-control-v1`` protocol.
-
-    ``vo``
-        VO backend. Requires an active VO window, and support differs across
-        platforms. Currently, this is used as a fallback for Wayland
-        compositors without support for the ``ext-data-control-v1``
-        protocol.
+    See ``--clipboard-backends`` option for the list of available backends.
 
 ``clock``
 

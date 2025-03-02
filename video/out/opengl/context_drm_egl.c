@@ -70,9 +70,6 @@ struct priv {
     struct egl egl;
     struct gbm gbm;
 
-    GLsync *vsync_fences;
-    unsigned int num_vsync_fences;
-
     uint32_t gbm_format;
     uint64_t *gbm_modifiers;
     unsigned int num_gbm_modifiers;
@@ -366,31 +363,8 @@ static void swapchain_step(struct ra_ctx *ctx)
     dequeue_bo(ctx);
 }
 
-static void new_fence(struct ra_ctx *ctx)
+static void drm_egl_swap_buffers(struct ra_ctx *ctx)
 {
-    struct priv *p = ctx->priv;
-
-    if (p->gl.FenceSync) {
-        GLsync fence = p->gl.FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-        if (fence)
-            MP_TARRAY_APPEND(p, p->vsync_fences, p->num_vsync_fences, fence);
-    }
-}
-
-static void wait_fence(struct ra_ctx *ctx)
-{
-    struct priv *p = ctx->priv;
-
-    while (p->num_vsync_fences && (p->num_vsync_fences >= p->gbm.num_bos)) {
-        p->gl.ClientWaitSync(p->vsync_fences[0], GL_SYNC_FLUSH_COMMANDS_BIT, 1e9);
-        p->gl.DeleteSync(p->vsync_fences[0]);
-        MP_TARRAY_REMOVE_AT(p->vsync_fences, p->num_vsync_fences, 0);
-    }
-}
-
-static bool drm_egl_start_frame(struct ra_swapchain *sw, struct ra_fbo *out_fbo)
-{
-    struct ra_ctx *ctx = sw->ctx;
     struct priv *p = ctx->priv;
     struct vo_drm_state *drm = ctx->vo->drm;
 
@@ -399,30 +373,8 @@ static bool drm_egl_start_frame(struct ra_swapchain *sw, struct ra_fbo *out_fbo)
         p->drm_params.atomic_request_ptr = &drm->atomic_context->request;
     }
 
-    return ra_gl_ctx_start_frame(sw, out_fbo);
-}
-
-static bool drm_egl_submit_frame(struct ra_swapchain *sw, const struct vo_frame *frame)
-{
-    struct ra_ctx *ctx = sw->ctx;
-    struct vo_drm_state *drm = ctx->vo->drm;
-
-    drm->still = frame->still;
-
-    return ra_gl_ctx_submit_frame(sw, frame);
-}
-
-static void drm_egl_swap_buffers(struct ra_swapchain *sw)
-{
-    struct ra_ctx *ctx = sw->ctx;
-    struct priv *p = ctx->priv;
-    struct vo_drm_state *drm = ctx->vo->drm;
-    const bool drain = drm->paused || drm->still;  // True when we need to drain the swapchain
-
     if (!drm->active)
         return;
-
-    wait_fence(ctx);
 
     eglSwapBuffers(p->egl.display, p->egl.surface);
 
@@ -432,9 +384,8 @@ static void drm_egl_swap_buffers(struct ra_swapchain *sw)
         return;
     }
     enqueue_bo(ctx, new_bo);
-    new_fence(ctx);
 
-    while (drain || p->gbm.num_bos > ctx->vo->opts->swapchain_depth ||
+    while (drm->redraw || p->gbm.num_bos > ctx->vo->opts->swapchain_depth ||
            !gbm_surface_has_free_buffers(p->gbm.surface)) {
         if (drm->waiting_for_flip) {
             vo_drm_wait_on_flip(drm);
@@ -449,13 +400,8 @@ static void drm_egl_swap_buffers(struct ra_swapchain *sw)
         }
         queue_flip(ctx, p->gbm.bo_queue[1]);
     }
+    drm->redraw = false;
 }
-
-static const struct ra_swapchain_fns drm_egl_swapchain = {
-    .start_frame   = drm_egl_start_frame,
-    .submit_frame  = drm_egl_submit_frame,
-    .swap_buffers  = drm_egl_swap_buffers,
-};
 
 static void drm_egl_uninit(struct ra_ctx *ctx)
 {
@@ -682,9 +628,9 @@ static bool drm_egl_init(struct ra_ctx *ctx)
         MP_VERBOSE(ctx, "Could not find path to render node.\n");
     }
 
-    struct ra_gl_ctx_params params = {
-        .external_swapchain = &drm_egl_swapchain,
-        .get_vsync          = &drm_egl_get_vsync,
+    struct ra_ctx_params params = {
+        .get_vsync          = drm_egl_get_vsync,
+        .swap_buffers       = drm_egl_swap_buffers,
     };
     if (!ra_gl_ctx_init(ctx, &p->gl, params))
         goto err;

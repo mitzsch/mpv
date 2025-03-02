@@ -288,8 +288,8 @@ static void pointer_handle_enter(void *data, struct wl_pointer *pointer,
     wl->mouse_x = handle_round(wl->scaling, wl_fixed_to_int(sx));
     wl->mouse_y = handle_round(wl->scaling, wl_fixed_to_int(sy));
 
-    if (!wl->toplevel_configured)
-        mp_input_set_mouse_pos(wl->vo->input_ctx, wl->mouse_x, wl->mouse_y);
+    mp_input_set_mouse_pos(wl->vo->input_ctx, wl->mouse_x, wl->mouse_y,
+                           wl->toplevel_configured);
     wl->toplevel_configured = false;
 }
 
@@ -310,8 +310,8 @@ static void pointer_handle_motion(void *data, struct wl_pointer *pointer,
     wl->mouse_x = handle_round(wl->scaling, wl_fixed_to_int(sx));
     wl->mouse_y = handle_round(wl->scaling, wl_fixed_to_int(sy));
 
-    if (!wl->toplevel_configured)
-        mp_input_set_mouse_pos(wl->vo->input_ctx, wl->mouse_x, wl->mouse_y);
+    mp_input_set_mouse_pos(wl->vo->input_ctx, wl->mouse_x, wl->mouse_y,
+                           wl->toplevel_configured);
     wl->toplevel_configured = false;
 }
 
@@ -778,9 +778,11 @@ static void data_device_handle_enter(void *data, struct wl_data_device *wl_ddev,
     }
 
     assert(!s->dnd_offer->offer);
+    int action = s->dnd_offer->action;
     *s->dnd_offer = *s->pending_offer;
     *s->pending_offer = (struct vo_wayland_data_offer){.fd = -1};
     o = s->dnd_offer;
+    o->action = action;
     if (wl->opts->drag_and_drop != -2) {
         wl_data_offer_set_actions(id, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY |
                                       WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE,
@@ -2158,9 +2160,12 @@ static void check_fd(struct vo_wayland_state *wl, struct vo_wayland_data_offer *
                 if (o->offer)
                     wl_data_offer_finish(o->offer);
 
-                assert(o->action >= 0);
-                mp_event_drop_mime_data(wl->vo->input_ctx, o->mime_type,
-                                        content, o->action);
+                if (o->action >= 0) {
+                    mp_event_drop_mime_data(wl->vo->input_ctx, o->mime_type,
+                                            content, o->action);
+                } else {
+                    MP_WARN(wl, "Data offer did not have a valid action!\n");
+                }
             } else {
                 // Update clipboard text content
                 talloc_free(wl->selection_text.start);

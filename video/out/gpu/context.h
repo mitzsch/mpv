@@ -60,6 +60,29 @@ struct ra_ctx_fns {
     void (*uninit)(struct ra_ctx *ctx);
 };
 
+// These are a set of helpers for ra_ctx providers based on ra_gl.
+// The init function also initializes ctx->ra and ctx->swapchain, so the user
+// doesn't have to do this manually. (Similarly, the uninit function will
+// clean them up)
+
+struct ra_ctx_params {
+    // For special contexts (i.e. wayland) that want to check visibility
+    // before drawing a frame.
+    bool (*check_visible)(struct ra_ctx *ctx);
+
+    // See ra_swapchain_fns.color_depth.
+    int (*color_depth)(struct ra_ctx *ctx);
+
+    // See ra_swapchain_fns.get_vsync.
+    void (*get_vsync)(struct ra_ctx *ctx, struct vo_vsync_info *info);
+
+    // Set to the platform-specific function to swap buffers, like
+    // glXSwapBuffers, eglSwapBuffers etc. This will be called by
+    // ra_gl_ctx_swap_buffers. Required unless you either never call that
+    // function or if you override it yourself.
+    void (*swap_buffers)(struct ra_ctx *ctx);
+};
+
 // Extra struct for the swapchain-related functions so they can be easily
 // inherited from helpers.
 struct ra_swapchain {
