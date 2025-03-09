@@ -80,7 +80,7 @@ static void list_profiles(struct m_config *config)
         MP_INFO(config, "\t%s\t%s\n", p->name, p->desc ? p->desc : "");
 }
 
-static int show_profile(struct m_config *config, bstr param)
+static int show_profile(struct m_config *config, bstr param, int depth)
 {
     struct m_profile *p;
     if (!param.len) {
@@ -91,33 +91,33 @@ static int show_profile(struct m_config *config, bstr param)
         MP_ERR(config, "Unknown profile '%.*s'.\n", BSTR_P(param));
         return M_OPT_EXIT;
     }
-    if (!config->profile_depth)
+    if (!depth)
         MP_INFO(config, "Profile %s: %s\n", p->name,
                 p->desc ? p->desc : "");
-    config->profile_depth++;
+    depth++;
     if (p->cond) {
-        MP_INFO(config, "%*sprofile-cond=%s\n", config->profile_depth, "",
+        MP_INFO(config, "%*sprofile-cond=%s\n", depth, "",
                 p->cond);
     }
     for (int i = 0; i < p->num_opts; i++) {
-        MP_INFO(config, "%*s%s=%s\n", config->profile_depth, "",
+        MP_INFO(config, "%*s%s=%s\n", depth, "",
                 p->opts[2 * i], p->opts[2 * i + 1]);
 
-        if (config->profile_depth < MAX_PROFILE_DEPTH
+        if (depth < MAX_PROFILE_DEPTH
             && !strcmp(p->opts[2*i], "profile")) {
             char *e, *list = p->opts[2 * i + 1];
             while ((e = strchr(list, ','))) {
                 int l = e - list;
                 if (!l)
                     continue;
-                show_profile(config, (bstr){list, e - list});
+                show_profile(config, (bstr){list, e - list}, depth);
                 list = e + 1;
             }
             if (list[0] != '\0')
-                show_profile(config, bstr0(list));
+                show_profile(config, bstr0(list), depth);
         }
     }
-    config->profile_depth--;
+    depth--;
     return M_OPT_EXIT;
 }
 
@@ -459,13 +459,13 @@ static int m_config_handle_special_options(struct m_config *config,
         config->recursion_depth += 1;
         config->includefunc(config->includefunc_ctx, param, flags);
         config->recursion_depth -= 1;
-        if (config->recursion_depth == 0 && config->profile_depth == 0)
+        if (config->recursion_depth == 0 && config->profile_stack_depth == 0)
             m_config_finish_default_profile(config, flags);
         return 1;
     }
 
     if (config->use_profiles && strcmp(co->name, "show-profile") == 0)
-        return show_profile(config, bstr0(*(char **)data));
+        return show_profile(config, bstr0(*(char **)data), 0);
 
     if (config->is_toplevel && (strcmp(co->name, "h") == 0 ||
                                 strcmp(co->name, "help") == 0))
@@ -595,7 +595,7 @@ static void notify_opt(struct m_config *config, void *ptr, bool self_notificatio
     }
     // ptr doesn't point to any config->optstruct field declared in the
     // option list?
-    assert(false);
+    mp_assert(false);
 }
 
 void m_config_notify_change_opt_ptr(struct m_config *config, void *ptr)
@@ -717,7 +717,7 @@ int m_config_set_option_cli(struct m_config *config, struct bstr name,
                             struct bstr param, int flags)
 {
     int r;
-    assert(config != NULL);
+    mp_assert(config != NULL);
 
     bool negate;
     struct m_config_option *co =
@@ -737,8 +737,11 @@ int m_config_set_option_cli(struct m_config *config, struct bstr name,
         param = bstr0("no");
     }
 
+    if (flags & M_SETOPT_FROM_CONFIG_FILE)
+        co->coalesce = true;
+
     // This is the only mandatory function
-    assert(co->opt->type->parse);
+    mp_assert(co->opt->type->parse);
 
     r = handle_set_opt_flags(config, co, flags);
     if (r <= 0)
@@ -986,8 +989,14 @@ static struct m_profile *find_check_profile(struct m_config *config, char *name)
         MP_WARN(config, "Unknown profile '%s'.\n", name);
         return NULL;
     }
-    if (config->profile_depth > MAX_PROFILE_DEPTH) {
-        MP_WARN(config, "WARNING: Profile inclusion too deep.\n");
+    for (size_t i = 0; i < config->profile_stack_depth; ++i) {
+        if (strcmp(config->profile_stack[i], name))
+            continue;
+        MP_WARN(config, "Profile '%s' has already been applied.\n", name);
+        return NULL;
+    }
+    if (config->profile_stack_depth > MAX_PROFILE_DEPTH) {
+        MP_WARN(config, "Profile inclusion too deep.\n");
         return NULL;
     }
     return p;
@@ -995,11 +1004,6 @@ static struct m_profile *find_check_profile(struct m_config *config, char *name)
 
 int m_config_set_profile(struct m_config *config, char *name, int flags)
 {
-    if ((flags & M_SETOPT_FROM_CONFIG_FILE) && !strcmp(name, "default")) {
-        MP_WARN(config, "Ignoring profile=%s from config file.\n", name);
-        return 0;
-    }
-
     MP_VERBOSE(config, "Applying profile '%s'...\n", name);
     struct m_profile *p = find_check_profile(config, name);
     if (!p)
@@ -1010,14 +1014,18 @@ int m_config_set_profile(struct m_config *config, char *name, int flags)
         config->profile_backup_flags = p->restore_mode == 2 ? BACKUP_NVAL : 0;
     }
 
-    config->profile_depth++;
+    char *profile_name = talloc_strdup(NULL, name);
+    // Note that we don't check if profile applied correctly, it doesn't matter.
+    MP_TARRAY_APPEND(config, config->profile_stack, config->profile_stack_depth, profile_name);
+    talloc_steal(config->profile_stack, profile_name);
     for (int i = 0; i < p->num_opts; i++) {
         m_config_set_option_cli(config,
                                 bstr0(p->opts[2 * i]),
                                 bstr0(p->opts[2 * i + 1]),
                                 flags | M_SETOPT_FROM_CONFIG_FILE);
     }
-    config->profile_depth--;
+    if (MP_TARRAY_POP(config->profile_stack, config->profile_stack_depth, &profile_name))
+        talloc_free(profile_name);
 
     if (config->profile_backup_tmp == &p->backups) {
         config->profile_backup_tmp = NULL;

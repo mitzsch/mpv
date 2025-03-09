@@ -76,9 +76,11 @@ void uninit_sub(struct MPContext *mpctx, struct track *track)
     if (track && track->d_sub) {
         int order = get_order(mpctx, track);
         reset_subtitles(mpctx, track);
-        term_osd_set_subs(mpctx, NULL, order);
         sub_select(track->d_sub, false);
-        osd_set_sub(mpctx->osd, order, NULL);
+        if (order >= 0) {
+            term_osd_set_subs(mpctx, NULL, order);
+            osd_set_sub(mpctx->osd, order, NULL);
+        }
         sub_destroy(track->d_sub);
         track->d_sub = NULL;
     }
@@ -136,7 +138,9 @@ static bool update_subtitle(struct MPContext *mpctx, double video_pts,
         // Handle displaying subtitles on terminal.
         if (track->selected && track->type == STREAM_SUB && !mpctx->video_out) {
             char *text = sub_get_text(dec_sub, video_pts, SD_TEXT_TYPE_PLAIN);
-            term_osd_set_subs(mpctx, text, get_order(mpctx, track));
+            int order = get_order(mpctx, track);
+            if (order >= 0)
+                term_osd_set_subs(mpctx, text, order);
             talloc_free(text);
         }
 
@@ -191,7 +195,7 @@ static struct attachment_list *get_all_attachments(struct MPContext *mpctx)
 
 static bool init_subdec(struct MPContext *mpctx, struct track *track)
 {
-    assert(!track->d_sub);
+    mp_assert(!track->d_sub);
 
     if (!track->demuxer || !track->stream)
         return false;
@@ -216,7 +220,7 @@ void reinit_sub(struct MPContext *mpctx, struct track *track)
     if (!track || !track->stream || track->stream->type != STREAM_SUB)
         return;
 
-    assert(!track->d_sub);
+    mp_assert(!track->d_sub);
 
     if (!init_subdec(mpctx, track)) {
         error_on_track(mpctx, track);

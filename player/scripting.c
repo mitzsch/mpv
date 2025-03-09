@@ -240,16 +240,20 @@ static char **list_script_files(void *talloc_ctx, char *path)
 static void load_builtin_script(struct MPContext *mpctx, int slot, bool enable,
                                 const char *fname)
 {
-    assert(slot < MP_ARRAY_SIZE(mpctx->builtin_script_ids));
+    mp_assert(slot < MP_ARRAY_SIZE(mpctx->builtin_script_ids));
     int64_t *pid = &mpctx->builtin_script_ids[slot];
-    if (*pid > 0 && !mp_client_id_exists(mpctx, *pid))
+    if (*pid > 0 && !mp_client_id_exists(mpctx, *pid)) {
+        MP_DBG(mpctx, "Client for script %s is no longer alive. Marking as unloaded.\n", fname);
         *pid = 0; // died
+    }
     if ((*pid > 0) != enable) {
         if (enable) {
             *pid = mp_load_script(mpctx, fname);
         } else {
             char *name = mp_tprintf(22, "@%"PRIi64, *pid);
+            MP_DBG(mpctx, "Unloading script %s (disabled by option)\n", fname);
             mp_client_send_event(mpctx, name, 0, MPV_EVENT_SHUTDOWN, NULL);
+            // note: there is no synchronization of script exit
         }
     }
 }
@@ -264,6 +268,7 @@ void mp_load_builtin_scripts(struct MPContext *mpctx)
                         "@auto_profiles.lua");
     load_builtin_script(mpctx, 5, mpctx->opts->lua_load_select, "@select.lua");
     load_builtin_script(mpctx, 6, mpctx->opts->lua_load_positioning, "@positioning.lua");
+    load_builtin_script(mpctx, 7, mpctx->opts->lua_load_commands, "@commands.lua");
 }
 
 bool mp_load_scripts(struct MPContext *mpctx)

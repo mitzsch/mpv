@@ -32,6 +32,7 @@
 #include "osdep/threads.h"
 
 #include <libavutil/avutil.h>
+#include <libavutil/ffversion.h>
 #include <libavutil/log.h>
 #include <libavutil/version.h>
 
@@ -205,7 +206,11 @@ void check_library_versions(struct mp_log *log, int v)
         {"libswscale",    LIBSWSCALE_VERSION_INT,    swscale_version()},
     };
 
-    mp_msg(log, v, "FFmpeg version: %s\n", av_version_info());
+    const char *runtime_version = av_version_info();
+    mp_msg(log, v, "FFmpeg version: %s", FFMPEG_VERSION);
+    if (strcmp(runtime_version, FFMPEG_VERSION))
+        mp_msg(log, v, " (runtime %s)", runtime_version);
+    mp_msg(log, v, "\n");
     mp_msg(log, v, "FFmpeg library versions:\n");
 
     for (int n = 0; n < MP_ARRAY_SIZE(libs); n++) {
@@ -217,9 +222,9 @@ void check_library_versions(struct mp_log *log, int v)
         if (l->buildv > l->runv ||
             AV_VERSION_MAJOR(l->buildv) != AV_VERSION_MAJOR(l->runv))
         {
-            fprintf(stderr, "%s: %d.%d.%d -> %d.%d.%d\n",
-                    l->name, V(l->buildv), V(l->runv));
-            abort();
+            mp_fatal(log, "%s: build version %d.%d.%d incompatible with runtime version %d.%d.%d\n",
+                     l->name, V(l->buildv), V(l->runv));
+            exit(1);
         }
     }
 }

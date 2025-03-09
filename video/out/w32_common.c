@@ -228,7 +228,7 @@ static bool check_windows10_build(DWORD build)
 // Get adjusted title bar height, only relevant for --title-bar=no
 static int get_title_bar_height(struct vo_w32_state *w32)
 {
-    assert(w32->opts->border ? !w32->opts->title_bar : IsMaximized(w32->window));
+    mp_assert(w32->opts->border ? !w32->opts->title_bar : IsMaximized(w32->window));
     UINT visible_border = 0;
     // Only available on Windows 11, check in case it's backported and breaks
     // WM_NCCALCSIZE exception for Windows 10.
@@ -1923,7 +1923,7 @@ static void run_message_loop(struct vo_w32_state *w32)
     // Even if the message loop somehow exits, we still have to respond to
     // external requests until termination is requested.
     while (!w32->terminate) {
-        assert(!w32->in_dispatch);
+        mp_assert(!w32->in_dispatch);
         w32->in_dispatch = true;
         mp_dispatch_queue_process(w32->dispatch, 1000);
         w32->in_dispatch = false;
@@ -2154,7 +2154,7 @@ done:
 
 bool vo_w32_init(struct vo *vo)
 {
-    assert(!vo->w32);
+    mp_assert(!vo->w32);
 
     struct vo_w32_state *w32 = talloc_ptrtype(vo, w32);
     *w32 = (struct vo_w32_state){
@@ -2234,6 +2234,33 @@ static char **get_disp_names(struct vo_w32_state *w32)
     EnumDisplayMonitors(NULL, &rect, disp_names_proc, (LPARAM)&data);
     MP_TARRAY_APPEND(NULL, data.names, data.count, NULL);
     return data.names;
+}
+
+static bool gui_thread_control_supports(int request)
+{
+    switch (request) {
+    case VOCTRL_VO_OPTS_CHANGED:
+    case VOCTRL_GET_WINDOW_ID:
+    case VOCTRL_GET_HIDPI_SCALE:
+    case VOCTRL_GET_UNFS_WINDOW_SIZE:
+    case VOCTRL_SET_UNFS_WINDOW_SIZE:
+    case VOCTRL_SET_CURSOR_VISIBILITY:
+    case VOCTRL_KILL_SCREENSAVER:
+    case VOCTRL_RESTORE_SCREENSAVER:
+    case VOCTRL_UPDATE_WINDOW_TITLE:
+    case VOCTRL_UPDATE_PLAYBACK_STATE:
+    case VOCTRL_GET_DISPLAY_FPS:
+    case VOCTRL_GET_DISPLAY_RES:
+    case VOCTRL_GET_DISPLAY_NAMES:
+    case VOCTRL_GET_ICC_PROFILE:
+    case VOCTRL_GET_FOCUSED:
+    case VOCTRL_BEGIN_DRAGGING:
+    case VOCTRL_SHOW_MENU:
+    case VOCTRL_UPDATE_MENU:
+        return true;
+    }
+
+    return false;
 }
 
 static int gui_thread_control(struct vo_w32_state *w32, int request, void *arg)
@@ -2396,7 +2423,9 @@ static int gui_thread_control(struct vo_w32_state *w32, int request, void *arg)
         mp_win32_menu_update(w32->menu_ctx, (struct mpv_node *)arg);
         return VO_TRUE;
     }
-    return VO_NOTIMPL;
+
+    // Keep gui_thread_control_supports() in sync
+    MP_ASSERT_UNREACHABLE();
 }
 
 static void do_control(void *ptr)
@@ -2428,6 +2457,8 @@ int vo_w32_control(struct vo *vo, int *events, int request, void *arg)
             mp_dispatch_unlock(w32->dispatch);
         }
         return VO_TRUE;
+    } else if (!gui_thread_control_supports(request)) {
+        return VO_NOTIMPL;
     } else {
         int r;
         void *p[] = {w32, events, &request, arg, &r};

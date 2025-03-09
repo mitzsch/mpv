@@ -118,6 +118,8 @@ struct command_ctx {
     mpv_node udata;
     mpv_node mdata;
 
+    int hwdec_osd_mode;
+
     double cached_window_scale;
 };
 
@@ -432,6 +434,7 @@ static int mp_property_generic_option(void *ctx, struct m_property *prop,
         m_option_copy(opt->opt, arg, opt->data);
         return M_PROPERTY_OK;
     case M_PROPERTY_SET:
+        opt->coalesce = prop->coalesce;
         if (m_config_set_option_raw(mpctx->mconfig, opt, arg, 0) < 0)
             return M_PROPERTY_ERROR;
         return M_PROPERTY_OK;
@@ -1916,7 +1919,7 @@ static int mp_property_audio_out_params(void *ctx, struct m_property *prop,
 static struct track* track_next(struct MPContext *mpctx, enum stream_type type,
                                 int direction, struct track *track)
 {
-    assert(direction == -1 || direction == +1);
+    mp_assert(direction == -1 || direction == +1);
     struct track *prev = NULL, *next = NULL;
     bool seen = track == NULL;
     for (int n = 0; n < mpctx->num_tracks; n++) {
@@ -2113,7 +2116,7 @@ static int get_track_entry(int item, int action, void *arg, void *ctx)
             ka->key = rem;
             if (!rem[0]) {
                 ret = M_PROPERTY_ERROR;
-            } else if (!tags || tags->num_keys == 0) {
+            } else if (tags->num_keys == 0) {
                 ret = M_PROPERTY_UNAVAILABLE;
             } else {
                 ret = tag_property(action, (void *)ka, tags);
@@ -2284,7 +2287,7 @@ static int mp_property_current_tracks(void *ctx, struct m_property *prop,
             break;
         }
     }
-    assert(index >= 0);
+    mp_assert(index >= 0);
 
     char *name = mp_tprintf(80, "track-list/%d%s%s", index, *rem ? "/" : "", rem);
     return mp_property_do(name, ka->action, ka->arg, ctx);
@@ -2296,12 +2299,11 @@ static int mp_property_hwdec_current(void *ctx, struct m_property *prop,
     MPContext *mpctx = ctx;
     struct track *track = mpctx->current_track[0][STREAM_VIDEO];
     struct mp_decoder_wrapper *dec = track ? track->dec : NULL;
+    char *current = NULL;
 
-    if (!dec)
+    if (!dec || !mp_decoder_wrapper_control(dec, VDCTRL_GET_HWDEC, &current))
         return M_PROPERTY_UNAVAILABLE;
 
-    char *current = NULL;
-    mp_decoder_wrapper_control(dec, VDCTRL_GET_HWDEC, &current);
     if (!current || !current[0])
         current = "no";
     return m_property_strdup_ro(action, arg, current);
@@ -3556,7 +3558,7 @@ static int mp_property_protocols(void *ctx, struct m_property *prop,
 {
     switch (action) {
     case M_PROPERTY_GET:
-        *(char ***)arg = stream_get_proto_list();
+        *(char ***)arg = stream_get_proto_list(false);
         return M_PROPERTY_OK;
     case M_PROPERTY_GET_TYPE:
         *(struct m_option *)arg = (struct m_option){.type = CONF_TYPE_STRING_LIST};
@@ -3969,7 +3971,7 @@ static int do_op_udata(struct udata_ctx* ctx, int action, void *arg)
         return M_PROPERTY_OK;
     case M_PROPERTY_GET:
     case M_PROPERTY_GET_NODE: // same as GET, because type==mpv_node
-        assert(node);
+        mp_assert(node);
         m_option_copy(&udata_type, arg, node);
         return M_PROPERTY_OK;
     case M_PROPERTY_FIXED_LEN_PRINT:
@@ -3980,13 +3982,13 @@ static int do_op_udata(struct udata_ctx* ctx, int action, void *arg)
     }
     case M_PROPERTY_SET:
     case M_PROPERTY_SET_NODE:
-        assert(node);
+        mp_assert(node);
         m_option_copy(&udata_type, node, arg);
         talloc_steal(ctx->ta_parent, node_get_alloc(node));
         mp_notify_property(mpctx, ctx->path);
         return M_PROPERTY_OK;
     case M_PROPERTY_KEY_ACTION: {
-        assert(node);
+        mp_assert(node);
 
         // If we're operating on an array, sub-object access is handled by m_property_read_list
         if (node->format == MPV_FORMAT_NODE_ARRAY)
@@ -4748,9 +4750,16 @@ static void show_property_osd(MPContext *mpctx, const char *name, int osd_mode)
 {
     struct MPOpts *opts = mpctx->opts;
     struct property_osd_display disp = {.name = name, .osd_name = name};
+    struct command_ctx *cmd = mpctx->command_ctx;
 
     if (!osd_mode)
         return;
+
+    // hwdec is a special case that must wait until video reconfig
+    if (strcmp(name, "hwdec") == 0 && !cmd->hwdec_osd_mode) {
+        cmd->hwdec_osd_mode = osd_mode;
+        return;
+    }
 
     // look for the command
     for (const struct property_osd_display *p = property_osd_display; p->name; p++)
@@ -4991,7 +5000,7 @@ done:
 static void replace_overlay(struct MPContext *mpctx, int id, struct overlay *new)
 {
     struct command_ctx *cmd = mpctx->command_ctx;
-    assert(id >= 0);
+    mp_assert(id >= 0);
     if (id >= cmd->num_overlays) {
         MP_TARRAY_GROW(cmd, cmd->overlays, id);
         while (cmd->num_overlays <= id)
@@ -5211,8 +5220,17 @@ static void show_property_status(struct mp_cmd_ctx *cmd, const char *name, int r
 static void change_property_cmd(struct mp_cmd_ctx *cmd,
                                 const char *name, int action, void *arg)
 {
+    struct m_property *prop = NULL;
+    if (cmd->cmd->coalesce) {
+        struct command_ctx *ctx = cmd->mpctx->command_ctx;
+        prop = m_property_list_find(ctx->properties, name);
+        if (prop)
+            prop->coalesce = true;
+    }
     int r = mp_property_do(name, action, arg, cmd->mpctx);
     show_property_status(cmd, name, r);
+    if (prop)
+        prop->coalesce = false;
 }
 
 static void cmd_cycle_values(void *p)
@@ -5433,7 +5451,7 @@ void run_command(struct MPContext *mpctx, struct mp_cmd *cmd,
     if (!ctx->abort && cmd->def->can_abort)
         ctx->abort = talloc_zero(ctx, struct mp_abort_entry);
 
-    assert(cmd->def->can_abort == !!ctx->abort);
+    mp_assert(cmd->def->can_abort == !!ctx->abort);
 
     if (ctx->abort) {
         ctx->abort->coupled_to_playback |= cmd->def->abort_on_playback_end;
@@ -6197,15 +6215,17 @@ static void cmd_track_add(void *p)
     struct mp_cmd_ctx *cmd = p;
     struct MPContext *mpctx = cmd->mpctx;
     int type = *(int *)cmd->priv;
-    bool is_albumart = type == STREAM_VIDEO &&
-                       cmd->args[4].v.b;
+    int select = cmd->args[1].v.i & 3;
+    enum track_flags flags = cmd->args[1].v.i & ~3;
+    if (type == STREAM_VIDEO && cmd->args[4].v.b)
+        flags |= TRACK_ATTACHED_PICTURE;
 
     if (mpctx->stop_play) {
         cmd->success = false;
         return;
     }
 
-    if (cmd->args[1].v.i == 2) {
+    if (select == 2) {
         struct track *t = find_track_with_url(mpctx, type, cmd->args[0].v.s);
         if (t) {
             if (mpctx->playback_initialized) {
@@ -6218,7 +6238,7 @@ static void cmd_track_add(void *p)
         }
     }
     int first = mp_add_external_file(mpctx, cmd->args[0].v.s, type,
-                                     cmd->abort->cancel, is_albumart);
+                                     cmd->abort->cancel, flags);
     if (first < 0) {
         cmd->success = false;
         return;
@@ -6226,7 +6246,7 @@ static void cmd_track_add(void *p)
 
     for (int n = first; n < mpctx->num_tracks; n++) {
         struct track *t = mpctx->tracks[n];
-        if (cmd->args[1].v.i == 1) {
+        if (select == 1) {
             t->no_default = true;
         } else if (n == first) {
             if (mpctx->playback_initialized) {
@@ -6281,10 +6301,13 @@ static void cmd_track_reload(void *p)
 
     if (t && t->is_external && t->external_filename) {
         char *filename = talloc_strdup(NULL, t->external_filename);
-        bool is_albumart = t->attached_picture;
+        enum track_flags flags = 0;
+        flags |= t->attached_picture ? TRACK_ATTACHED_PICTURE : 0;
+        flags |= t->hearing_impaired_track ? TRACK_HEARING_IMPAIRED : 0;
+        flags |= t->visual_impaired_track ? TRACK_VISUAL_IMPAIRED : 0;
         mp_remove_track(mpctx, t);
         nt_num = mp_add_external_file(mpctx, filename, type, cmd->abort->cancel,
-                                      is_albumart);
+                                      flags);
         talloc_free(filename);
     }
 
@@ -6295,8 +6318,11 @@ static void cmd_track_reload(void *p)
 
     struct track *nt = mpctx->tracks[nt_num];
 
-    if (!nt->lang)
-        nt->lang = bstrto0(nt, mp_guess_lang_from_filename(bstr0(nt->external_filename), NULL));
+    if (!nt->lang) {
+        bstr lang = mp_guess_lang_from_filename(bstr0(nt->external_filename), NULL,
+                                                &nt->hearing_impaired_track);
+        nt->lang = bstrto0(nt, lang);
+    }
 
     mp_switch_track(mpctx, nt->type, nt, 0);
     print_track_list(mpctx, "Reloaded:");
@@ -6860,13 +6886,13 @@ static void cache_dump_poll(struct MPContext *mpctx)
         return;
 
     // Can't close demuxer without stopping dumping.
-    assert(mpctx->demuxer);
+    mp_assert(mpctx->demuxer);
 
     if (mp_cancel_test(cmd->abort->cancel)) {
         // Synchronous abort. In particular, the dump command shall not report
         // completion to the user before the dump target file was closed.
         demux_cache_dump_set(mpctx->demuxer, 0, 0, NULL);
-        assert(demux_cache_dump_get_status(mpctx->demuxer) <= 0);
+        mp_assert(demux_cache_dump_get_status(mpctx->demuxer) <= 0);
     }
 
     int status = demux_cache_dump_get_status(mpctx->demuxer);
@@ -6890,7 +6916,7 @@ void mp_abort_cache_dumping(struct MPContext *mpctx)
     if (ctx->cache_dump_cmd)
         mp_cancel_trigger(ctx->cache_dump_cmd->abort->cancel);
     cache_dump_poll(mpctx);
-    assert(!ctx->cache_dump_cmd); // synchronous abort, must have worked
+    mp_assert(!ctx->cache_dump_cmd); // synchronous abort, must have worked
 }
 
 static void run_dump_cmd(struct mp_cmd_ctx *cmd, double start, double end,
@@ -7126,8 +7152,10 @@ const struct mp_cmd_def mp_cmds[] = {
     { "sub-add", cmd_track_add,
         {
             {"url", OPT_STRING(v.s)},
-            {"flags", OPT_CHOICE(v.i,
-                {"select", 0}, {"auto", 1}, {"cached", 2}),
+            {"flags", OPT_FLAGS(v.i,
+                {"select", 0}, {"auto", 1}, {"cached", 2},
+                {"hearing-impaired", TRACK_HEARING_IMPAIRED},
+                {"visual-impaired", TRACK_VISUAL_IMPAIRED}),
                 .flags = MP_CMD_OPT_ARG},
             {"title", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
             {"lang", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
@@ -7140,8 +7168,10 @@ const struct mp_cmd_def mp_cmds[] = {
     { "audio-add", cmd_track_add,
         {
             {"url", OPT_STRING(v.s)},
-            {"flags", OPT_CHOICE(v.i,
-                {"select", 0}, {"auto", 1}, {"cached", 2}),
+            {"flags", OPT_FLAGS(v.i,
+                {"select", 0}, {"auto", 1}, {"cached", 2},
+                {"hearing-impaired", TRACK_HEARING_IMPAIRED},
+                {"visual-impaired", TRACK_VISUAL_IMPAIRED}),
                 .flags = MP_CMD_OPT_ARG},
             {"title", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
             {"lang", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
@@ -7154,7 +7184,11 @@ const struct mp_cmd_def mp_cmds[] = {
     { "video-add", cmd_track_add,
         {
             {"url", OPT_STRING(v.s)},
-            {"flags", OPT_CHOICE(v.i, {"select", 0}, {"auto", 1}, {"cached", 2}),
+            {"flags", OPT_FLAGS(v.i,
+                {"select", 0}, {"auto", 1}, {"cached", 2},
+                {"hearing-impaired", TRACK_HEARING_IMPAIRED},
+                {"visual-impaired", TRACK_VISUAL_IMPAIRED},
+                {"attached-picture", TRACK_ATTACHED_PICTURE}),
                 .flags = MP_CMD_OPT_ARG},
             {"title", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
             {"lang", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
@@ -7493,7 +7527,7 @@ void command_uninit(struct MPContext *mpctx)
 {
     struct command_ctx *ctx = mpctx->command_ctx;
 
-    assert(!ctx->cache_dump_cmd); // closing the demuxer must have aborted it
+    mp_assert(!ctx->cache_dump_cmd); // closing the demuxer must have aborted it
 
     overlay_uninit(mpctx);
     ao_hotplug_destroy(ctx->hotplug);
@@ -7531,7 +7565,7 @@ void command_init(struct MPContext *mpctx)
     int count = num_base;
     for (int n = 0; n < num_opts; n++) {
         struct m_config_option *co = m_config_get_co_index(mpctx->mconfig, n);
-        assert(co->name[0]);
+        mp_assert(co->name[0]);
         if (co->opt->flags & M_OPT_NOPROP)
             continue;
 
@@ -7594,6 +7628,11 @@ static void command_event(struct MPContext *mpctx, int event, void *arg)
         run_command_opts(mpctx);
     }
 
+    if (event == MPV_EVENT_VIDEO_RECONFIG && ctx->hwdec_osd_mode) {
+        show_property_osd(mpctx, "hwdec", ctx->hwdec_osd_mode);
+        ctx->hwdec_osd_mode = 0;
+    }
+
     if (event == MPV_EVENT_IDLE)
         run_command_opts(mpctx);
 
@@ -7644,6 +7683,7 @@ void run_command_opts(struct MPContext *mpctx)
     for (int i = 0; opts->input_commands[i]; i++) {
         struct mp_cmd *cmd = mp_input_parse_cmd(mpctx->input, bstr0(opts->input_commands[i]),
                                                 "the command line");
+        cmd->coalesce = true;
         mp_input_queue_cmd(mpctx->input, cmd);
     }
     ctx->command_opts_processed = true;
@@ -7702,6 +7742,13 @@ void mp_option_change_callback(void *ctx, struct m_config_option *co, uint64_t f
     if (self_update)
         return;
 
+    // Run these immediately.
+    if (co && !co->coalesce) {
+        struct mp_option_callback callback = {.co = co, .flags = flags};
+        mp_option_run_callback(mpctx, &callback);
+        return;
+    }
+
     // Coalesce redundant updates and only keep the newest one.
     bool drop = false;
     for (int i = 0; i < mpctx->num_option_callbacks; i++) {
@@ -7724,12 +7771,12 @@ void mp_option_change_callback(void *ctx, struct m_config_option *co, uint64_t f
     }
 }
 
-void mp_option_run_callback(struct MPContext *mpctx, int index)
+void mp_option_run_callback(struct MPContext *mpctx, struct mp_option_callback *callback)
 {
     struct MPOpts *opts = mpctx->opts;
-    struct m_config_option *co = mpctx->option_callbacks[index].co;
+    struct m_config_option *co = callback->co;
     void *opt_ptr = co ? co->data : NULL;
-    uint64_t flags = mpctx->option_callbacks[index].flags;
+    uint64_t flags = callback->flags;
 
     if (flags & UPDATE_TERM)
         mp_update_logging(mpctx, false);

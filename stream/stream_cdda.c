@@ -160,7 +160,7 @@ static int seek(stream_t *s, int64_t newpos)
     int seek_to_track = 0;
     int i;
 
-    newpos += p->start_sector * CDIO_CD_FRAMESIZE_RAW;
+    newpos += (int64_t)p->start_sector * CDIO_CD_FRAMESIZE_RAW;
 
     sec = newpos / CDIO_CD_FRAMESIZE_RAW;
     if (newpos < 0 || sec > p->end_sector) {
@@ -222,8 +222,10 @@ static int control(stream_t *stream, int cmd, void *arg)
         int track = *(double *)arg;
         int start_track = get_track_by_sector(p, p->start_sector);
         int end_track = get_track_by_sector(p, p->end_sector);
+        if (start_track == -1 || end_track == -1)
+            return STREAM_ERROR;
         track += start_track;
-        if (track > end_track)
+        if (track < 0 || track > end_track)
             return STREAM_ERROR;
         int64_t sector = p->cd->disc_toc[track].dwStartSector - p->start_sector;
         int64_t pos = sector * CDIO_CD_FRAMESIZE_RAW;
@@ -238,7 +240,7 @@ static int control(stream_t *stream, int cmd, void *arg)
 static int64_t get_size(stream_t *st)
 {
     cdda_priv *p = st->priv;
-    return (p->end_sector + 1 - p->start_sector) * CDIO_CD_FRAMESIZE_RAW;
+    return (int64_t)(p->end_sector + 1 - p->start_sector) * CDIO_CD_FRAMESIZE_RAW;
 }
 
 static int open_cdda(stream_t *st)

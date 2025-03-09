@@ -100,6 +100,7 @@ sources = files(
     'demux/demux_mf.c',
     'demux/demux_mkv.c',
     'demux/demux_mkv_timeline.c',
+    'demux/demux_mpv.c',
     'demux/demux_null.c',
     'demux/demux_playlist.c',
     'demux/demux_raw.c',
@@ -189,6 +190,7 @@ sources = files(
     'stream/stream_lavf.c',
     'stream/stream_memory.c',
     'stream/stream_mf.c',
+    'stream/stream_mpv.c',
     'stream/stream_null.c',
     'stream/stream_slice.c',
 
@@ -631,10 +633,9 @@ dvdnav_opt = get_option('dvdnav').require(
     error_message: 'the build is not GPL!',
 )
 dvdnav = dependency('dvdnav', version: '>= 4.2.0', required: dvdnav_opt)
-dvdread = dependency('dvdread', version: '>= 4.1.0', required: dvdnav_opt)
-features += {'dvdnav': dvdnav.found() and dvdread.found()}
+features += {'dvdnav': dvdnav.found()}
 if features['dvdnav']
-    dependencies += [dvdnav, dvdread]
+    dependencies += dvdnav
     sources += files('stream/stream_dvdnav.c')
 endif
 
@@ -1797,6 +1798,9 @@ if get_option('cplayer')
 
     zsh_install_dir = join_paths(datadir, 'zsh', 'site-functions')
     install_data('etc/_mpv.zsh', install_dir: zsh_install_dir, rename: '_mpv')
+
+    fish_install_dir = join_paths(datadir, 'fish', 'vendor_completions.d')
+    install_data('etc/mpv.fish', install_dir: fish_install_dir, rename: 'mpv.fish')
 
     install_data('etc/mpv.metainfo.xml', install_dir: join_paths(datadir, 'metainfo'))
     install_data('etc/encoding-profiles.conf', install_dir: join_paths(confdir, 'mpv'))

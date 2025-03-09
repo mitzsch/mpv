@@ -198,7 +198,7 @@ static int dvd_probe(const char *path, const char *ext, const char *sig)
 
     char data[50];
 
-    assert(strlen(sig) <= sizeof(data));
+    mp_assert(strlen(sig) <= sizeof(data));
 
     if (fread(data, 50, 1, temp) == 1) {
         if (memcmp(data, sig, strlen(sig)) == 0)
@@ -456,8 +456,8 @@ static int control(stream_t *stream, int cmd, void *arg)
         int64_t tm = (int64_t)(d * 90000);
         if (tm < 0)
             tm = 0;
-        if (priv->duration && tm >= (priv->duration * 90))
-            tm = priv->duration * 90 - 1;
+        if (priv->duration && tm >= (int64_t)priv->duration * 90)
+            tm = (int64_t)priv->duration * 90 - 1;
         uint32_t pos, len;
         if (dvdnav_get_position(dvdnav, &pos, &len) != DVDNAV_STATUS_OK)
             break;

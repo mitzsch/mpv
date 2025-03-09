@@ -62,7 +62,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y ccache g++-mingw-w64 gcc-multilib meson nasm ninja-build pkgconf ${{ matrix.wine }}
+          sudo apt-get install --no-install-recommends -y ccache g++-mingw-w64 gcc-multilib meson nasm ninja-build pkgconf ${{ matrix.wine }} wine
 
       - name: Install Meson Wraps
         run: |
@@ -290,24 +290,25 @@ jobs:
       env:
         CC: "${{ matrix.config.cc }}"
         CXX: "${{ matrix.config.cxx }}"
+        CC_LD: "${{ matrix.config.ld }}"
+        CXX_LD: "${{ matrix.config.ld }}"
     strategy:
       matrix:
         config:
-        - {
-            cc: "gcc",
-            cxx: "g++",
-          }
-        - {
-            cc: "clang",
-            cxx: "clang++",
-          }
+          - cc: "gcc"
+            cxx: "g++"
+            args: "-Db_ndebug=true"
+          - cc: "clang"
+            cxx: "clang++"
+            ld: "lld"
+            args: "-Db_lto=true -Db_lto_mode=thin"
     steps:
       - uses: actions/checkout@v4
 
       - name: Build with meson
         id: build
         run: |
-          ./ci/build-tumbleweed.sh
+          ./ci/build-tumbleweed.sh ${{ matrix.config.args }}
 
       - name: Print meson log
         if: ${{ failure() && steps.build.outcome == 'failure' }}

@@ -204,5 +204,5 @@ end)
 
 mp.register_idle(on_idle)
 for _, name in ipairs({"on_load", "on_preloaded", "on_before_start_file"}) do
-    mp.add_hook(name, 50, on_hook)
+    mp.add_hook(name, 5, on_hook)
 end

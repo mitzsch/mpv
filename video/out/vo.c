@@ -265,7 +265,7 @@ static void dealloc_vo(struct vo *vo)
 static struct vo *vo_create(bool probing, struct mpv_global *global,
                             struct vo_extra *ex, char *name)
 {
-    assert(ex->wakeup_cb);
+    mp_assert(ex->wakeup_cb);
 
     struct mp_log *log = mp_log_new(NULL, global->log, "vo");
     struct m_obj_desc desc;
@@ -518,7 +518,7 @@ static void update_vsync_timing_after_swap(struct vo *vo,
 
     double avg = 0;
     for (int n = 0; n < in->num_vsync_samples; n++) {
-        assert(in->vsync_samples[n] > 0);
+        mp_assert(in->vsync_samples[n] > 0);
         avg += in->vsync_samples[n];
     }
     in->estimated_vsync_interval = avg / in->num_vsync_samples;
@@ -767,7 +767,7 @@ static int64_t get_current_frame_end(struct vo *vo)
 static int64_t get_display_synced_frame_end(struct vo *vo)
 {
     struct vo_internal *in = vo->in;
-    assert(!in->frame_queued);
+    mp_assert(!in->frame_queued);
     int64_t res = 0;
     if (in->base_vsync && in->vsync_interval > 1 && in->current_frame) {
         res = in->base_vsync;
@@ -877,7 +877,7 @@ void vo_queue_frame(struct vo *vo, struct vo_frame *frame)
 {
     struct vo_internal *in = vo->in;
     mp_mutex_lock(&in->lock);
-    assert(vo->config_ok && !in->frame_queued &&
+    mp_assert(vo->config_ok && !in->frame_queued &&
            (!in->current_frame || in->current_frame->num_vsyncs < 1));
     in->hasframe = true;
     frame->frame_id = ++(in->current_frame_id);
@@ -936,7 +936,7 @@ static bool render_frame(struct vo *vo)
     }
 
     frame = vo_frame_ref(in->current_frame);
-    assert(frame);
+    mp_assert(frame);
 
     if (frame->display_synced) {
         frame->pts = 0;
@@ -1065,7 +1065,7 @@ static bool render_frame(struct vo *vo)
     mp_cond_broadcast(&in->wakeup); // for vo_wait_frame()
 
 done:
-    if (!vo->driver->frame_owner || in->dropped_frame)
+    if (!(vo->driver->caps & VO_CAP_FRAMEOWNER) || in->dropped_frame)
         talloc_free(frame);
     mp_mutex_unlock(&in->lock);
 
@@ -1076,15 +1076,14 @@ static void do_redraw(struct vo *vo)
 {
     struct vo_internal *in = vo->in;
 
-    if (!vo->config_ok || (vo->driver->caps & VO_CAP_NORETAIN))
+    if (!vo->config_ok || (vo->driver->caps & VO_CAP_NORETAIN) ||
+        (vo->driver->caps & VO_CAP_UNTIMED))
         return;
 
     mp_mutex_lock(&in->lock);
     in->request_redraw = false;
     bool full_redraw = in->dropped_frame;
-    struct vo_frame *frame = NULL;
-    if (!vo->driver->untimed)
-        frame = vo_frame_ref(in->current_frame);
+    struct vo_frame *frame = vo_frame_ref(in->current_frame);
     if (frame)
         in->dropped_frame = false;
     struct vo_frame dummy = {0};
@@ -1100,7 +1099,7 @@ static void do_redraw(struct vo *vo)
     vo->driver->draw_frame(vo, frame);
     vo->driver->flip_page(vo);
 
-    if (frame != &dummy && !vo->driver->frame_owner)
+    if (frame != &dummy && !(vo->driver->caps & VO_CAP_FRAMEOWNER))
         talloc_free(frame);
 }
 

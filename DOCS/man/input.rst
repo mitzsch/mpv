@@ -663,6 +663,21 @@ Track Manipulation
         (In this case, title/language are ignored, and if the was changed since
         it was loaded, these changes won't be reflected.)
 
+    Additionally the following flags can be added with a ``+``:
+
+    <hearing-impaired>
+
+        Marks the track as suitable for the hearing impaired.
+
+    <visual-impaired>
+
+        Marks the track as suitable for the visually impaired.
+
+    <attached-picture> (only for ``video-add``)
+
+        Marks the track as an attached picture, same as ``albumart`` argument
+        for ```video-add``.
+
     The ``title`` argument sets the track title in the UI.
 
     The ``lang`` argument sets the track language, and can also influence
@@ -4028,7 +4043,6 @@ Property list
     See ``--clipboard-backends`` option for the list of available backends.
 
 ``clock``
-
     The current local time in hour:minutes format.
 
 Inconsistencies between options and properties

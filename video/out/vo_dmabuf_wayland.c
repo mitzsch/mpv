@@ -775,7 +775,7 @@ static int preinit(struct vo *vo)
     if (!p->ctx)
         goto err;
 
-    assert(p->ctx->ra);
+    mp_assert(p->ctx->ra);
 
     if (!vo->wl->dmabuf || !vo->wl->dmabuf_feedback) {
         MP_FATAL(vo->wl, "Compositor doesn't support the %s (ver. 4) protocol!\n",
@@ -862,8 +862,7 @@ err:
 const struct vo_driver video_out_dmabuf_wayland = {
     .description = "Wayland dmabuf video output",
     .name = "dmabuf-wayland",
-    .caps = VO_CAP_ROTATE90,
-    .frame_owner = true,
+    .caps = VO_CAP_ROTATE90 | VO_CAP_FRAMEOWNER,
     .preinit = preinit,
     .query_format = query_format,
     .reconfig2 = reconfig,

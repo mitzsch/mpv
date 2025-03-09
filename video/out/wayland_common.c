@@ -777,7 +777,7 @@ static void data_device_handle_enter(void *data, struct wl_data_device *wl_ddev,
         return;
     }
 
-    assert(!s->dnd_offer->offer);
+    mp_assert(!s->dnd_offer->offer);
     int action = s->dnd_offer->action;
     *s->dnd_offer = *s->pending_offer;
     *s->pending_offer = (struct vo_wayland_data_offer){.fd = -1};
@@ -2423,11 +2423,10 @@ static int lookupkey(int key)
         mpkey = lookup_keymap_table(keymap, key);
 
     // XFree86 keysym range; typically contains obscure "extra" keys
-    if (!mpkey && key >= 0x10080001 && key <= 0x1008FFFF) {
+    static_assert(MP_KEY_UNKNOWN_RESERVED_START + (0x1008FFFF - 0x10080000) <=
+                  MP_KEY_UNKNOWN_RESERVED_LAST, "");
+    if (!mpkey && key >= 0x10080001 && key <= 0x1008FFFF)
         mpkey = MP_KEY_UNKNOWN_RESERVED_START + (key - 0x10080000);
-        if (mpkey > MP_KEY_UNKNOWN_RESERVED_LAST)
-            mpkey = 0;
-    }
 
     return mpkey;
 }
