@@ -1050,8 +1050,8 @@ if features['wayland'] and features['memfd-create']
 endif
 
 dmabuf_wayland = get_option('dmabuf-wayland').require(
-    features['drm'] and features['memfd-create'] and features['wayland'],
-    error_message: 'drm, memfd-create or wayland was not found!',
+    features['memfd-create'] and features['wayland'],
+    error_message: 'memfd-create or wayland was not found!',
 )
 features += {'dmabuf-wayland': dmabuf_wayland.allowed()}
 if features['dmabuf-wayland']
@@ -1455,8 +1455,9 @@ if features['vaapi']
                      'video/out/hwdec/dmabuf_interop_pl.c')
 endif
 
-features += {'dmabuf-interop-gl': features['egl'] and features['drm']}
+features += {'dmabuf-interop-gl': features['egl'] and drm.found()}
 if features['dmabuf-interop-gl']
+    dependencies += drm.partial_dependency(includes: true, compile_args: true)
     sources += files('video/out/hwdec/dmabuf_interop_gl.c')
 endif
 
