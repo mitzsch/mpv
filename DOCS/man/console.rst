@@ -124,12 +124,12 @@ option. The configuration syntax is described in `mp.options functions`_.
 Configurable Options
 ~~~~~~~~~~~~~~~~~~~~
 
-``font``
-    The font name.
+``monospace_font``
+    Default: platform dependent
 
-    When necessary to align completions in a grid, a monospace font depending on
-    the platform is the default. When there are no completions, ``--osd-font``
-    is the default.
+    The monospace font used when there are completions to align in a grid.
+
+    When there are no completions, ``--osd-font`` is used.
 
 ``font_size``
     Default: 24
@@ -184,25 +184,31 @@ Configurable Options
     Whether to scale the console with the window height. Can be ``yes``, ``no``,
     or ``auto``, which follows the value of ``--osd-scale-by-window``.
 
-``selected_color``
+``focused_color``
     Default: ``#222222``
 
-    The color of the selected item.
+    The color of the focused item.
 
-``selected_back_color``
+``focused_back_color``
     Default: ``#FFFFFF``
 
-    The background color of the selected item.
+    The background color of the focused item.
 
 ``match_color``
     Default: ``#0088FF``
 
     The color of characters that match the searched string.
 
-``case_sensitive``
-    Default: no on Windows, yes on other platforms.
+``exact_match``
+    Default: no
 
-    Whether autocompletion is case sensitive. Only works with ASCII characters.
+    Whether to match menu search queries exactly instead of fuzzily. Without
+    this option, prefixing queries with ``'`` enables exact matching.
+
+``case_sensitive``
+    Default: no
+
+    Whether exact searches are case sensitive. Only works with ASCII characters.
 
 ``history_dedup``
     Default: true

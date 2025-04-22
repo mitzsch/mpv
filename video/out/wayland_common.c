@@ -1017,11 +1017,11 @@ static void output_handle_done(void *data, struct wl_output *wl_output)
     o->geometry.x1 += o->geometry.x0;
     o->geometry.y1 += o->geometry.y0;
 
-    MP_VERBOSE(o->wl, "Registered output %s %s (0x%x):\n"
+    MP_VERBOSE(o->wl, "Registered output %s %s (%s) (0x%x):\n"
                "\tx: %dpx, y: %dpx\n"
                "\tw: %dpx (%dmm), h: %dpx (%dmm)\n"
                "\tscale: %f\n"
-               "\tHz: %f\n", o->make, o->model, o->id, o->geometry.x0,
+               "\tHz: %f\n", o->make, o->model, o->name, o->id, o->geometry.x0,
                o->geometry.y0, mp_rect_w(o->geometry), o->phys_width,
                mp_rect_h(o->geometry), o->phys_height,
                o->scale / WAYLAND_SCALE_FACTOR, o->refresh_rate);
@@ -1705,6 +1705,13 @@ static void feedback_presented(void *data, struct wp_presentation_feedback *fbac
     struct vo_wayland_feedback_pool *fback_pool = data;
     struct vo_wayland_state *wl = fback_pool->wl;
 
+    bool current_zero_copy = flags & WP_PRESENTATION_FEEDBACK_KIND_ZERO_COPY;
+    if (wl->last_zero_copy == -1 || wl->last_zero_copy != current_zero_copy) {
+        MP_DBG(wl, "Presentation was done with %s.\n",
+                 current_zero_copy ? "direct scanout" : "a copy");
+        wl->last_zero_copy = current_zero_copy;
+    }
+
     if (fback)
         remove_feedback(fback_pool, fback);
 
@@ -1728,6 +1735,8 @@ static void feedback_presented(void *data, struct wp_presentation_feedback *fbac
 static void feedback_discarded(void *data, struct wp_presentation_feedback *fback)
 {
     struct vo_wayland_feedback_pool *fback_pool = data;
+    struct vo_wayland_state *wl = fback_pool->wl;
+    wl->last_zero_copy = -1;
     if (fback)
         remove_feedback(fback_pool, fback);
 }
@@ -3260,6 +3269,7 @@ bool vo_wayland_init(struct vo *vo)
         .wakeup_pipe = {-1, -1},
         .display_fd = -1,
         .cursor_visible = true,
+        .last_zero_copy = -1,
         .opts_cache = m_config_cache_alloc(wl, vo->global, &vo_sub_opts),
     };
     wl->opts = wl->opts_cache->opts;

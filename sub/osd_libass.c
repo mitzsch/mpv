@@ -119,6 +119,7 @@ static void create_ass_track(struct osd_state *osd, struct osd_object *obj,
     create_ass_renderer(osd, ass);
 
     ASS_Track *track = ass->track;
+    struct mp_osd_render_opts *opts = osd->opts;
     if (!track)
         track = ass->track = ass_new_track(ass->library);
 
@@ -127,9 +128,14 @@ static void create_ass_track(struct osd_state *osd, struct osd_object *obj,
     track->WrapStyle = 1; // end-of-line wrapping instead of smart wrapping
     track->Kerning = true;
     track->ScaledBorderAndShadow = true;
+    ass_set_shaper(ass->render, opts->osd_shaper);
 #if LIBASS_VERSION >= 0x01600010
     ass_track_set_feature(track, ASS_FEATURE_WRAP_UNICODE, 1);
 #endif
+#if LIBASS_VERSION >= 0x01703010
+    ass_configure_prune(track, opts->osd_ass_prune_delay * 1000.0);
+#endif
+    ass_set_cache_limits(ass->render, opts->osd_glyph_limit, opts->osd_bitmap_max_size);
     update_playres(ass, &obj->vo_res);
 }
 

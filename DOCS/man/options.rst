@@ -1039,6 +1039,9 @@ Program Behavior
         - ``--ytdl-raw-options=proxy=[http://127.0.0.1:3128]``
         - ``--ytdl-raw-options-append=proxy=http://127.0.0.1:3128``
 
+``--ytdl-extract-chapters=<yes|no>``
+    Enable chapter extracting from youtube-dl video description (default: yes).
+
 ``--js-memory-report=<yes|no>``
     Enable memory reporting for javascript scripts in the stats overlay.
     This is disabled by default because it has an overhead and increases
@@ -1993,7 +1996,7 @@ Audio
     If this is enabled (default), playing with a speed different from normal
     automatically inserts the ``scaletempo2`` audio filter. You can insert
     filters besides ``scaletempo2`` and modify their params using
-    `Conditional auto profiles`:
+    `Conditional auto profiles`_:
 
     ::
 
@@ -2616,6 +2619,18 @@ Subtitles
         This breaks sub-seek and subtitle rendering when changing play-direction
         from forward to backward during runtime for events that were already
         "seen" and need to be rendered again, if those events got pruned.
+
+``--sub-glyph-limit=<value>``
+    Set the maximum number of cached glyphs in libass cache for the subtitle
+    track. 0 means libass uses its default value.
+
+    Default: 0.
+
+``--sub-bitmap-max-size=<value>``
+    Set the maximum bitmap cache size in libass cache for the subtitle track. 0
+    means libass uses its default value. This accepts values in MB.
+
+    Default: 0.
 
 ``--sub-ass-styles=<filename>``
     Load all SSA/ASS styles found in the specified file and use them for
@@ -4785,6 +4800,26 @@ OSD
 
 ``--osd-fonts-dir=<path>``
     See ``--sub-fonts-dir`` for details.  Defaults to ``~~/fonts``.
+
+``--osd-glyph-limit=<value>``
+    Set the maximum number of cached glyphs in libass cache for the OSD.
+    0 means libass uses its default value.
+
+    Default: 0.
+
+``--osd-bitmap-max-size=<value>``
+    Set the maximum bitmap cache size in libass cache for the OSD. 0 means
+    libass uses its default value. This accepts values in MB.
+
+    Default: 0.
+
+``--osd-prune-delay=<-1|seconds>``
+    Set the delay for automatic pruning of events from memory in libass.
+    Disabled by default. See also ``--sub-ass-prune-delay``.
+
+``--osd-shaper=<simple|complex>``
+    Set the text layout engine used by libass for the OSD. Default: complex.
+    See also ``--sub-shaper``
 
 Screenshot
 ----------

@@ -127,6 +127,8 @@ struct mp_subtitle_opts {
     bool sub_clear_on_seek;
     int teletext_page;
     bool sub_past_video_end;
+    int sub_glyph_limit;
+    int sub_bitmap_max_size;
     char **sub_avopts;
 };
 
@@ -146,6 +148,10 @@ struct mp_osd_render_opts {
     struct osd_style_opts *osd_style;
     struct osd_bar_style_opts *osd_bar_style;
     bool force_rgba_osd;
+    double osd_ass_prune_delay;
+    int osd_glyph_limit;
+    int osd_bitmap_max_size;
+    int osd_shaper;
 };
 
 typedef struct MPOpts {
@@ -170,6 +176,7 @@ typedef struct MPOpts {
     bool lua_load_ytdl;
     char *lua_ytdl_format;
     char **lua_ytdl_raw_options;
+    bool lua_ytdl_extract_chapters;
     bool lua_load_stats;
     bool lua_load_console;
     int lua_load_auto_profiles;
