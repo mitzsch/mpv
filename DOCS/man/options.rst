@@ -2779,6 +2779,20 @@ Subtitles
     canvas size. Can be useful to test broken subtitles, which often happen
     when the video was transcoded, while attempting to keep the old subtitles.
 
+``--image-subs-hdr-peak=<sdr|video|10-10000>``
+    Controls the image subtitle diffuse white level in cd/m² (nits) for HDR
+    output. ``sdr`` is 203 cd/m² for standard SDR white, while ``video``
+    uses video metadata. (``--vo=gpu-next`` only)
+
+    Default: sdr
+
+``--sub-hdr-peak=<sdr|10-10000>``
+    Controls the text subtitle and OSD diffuse white level in cd/m² (nits)
+    for HDR output. ``sdr`` is 203 cd/m² for standard SDR white.
+    (``--vo=gpu-next`` only)
+
+    Default: sdr
+
 ``--sub-ass=<yes|no>``
     Render ASS subtitles natively (default: yes).
 
@@ -6124,6 +6138,14 @@ them.
     support D3D11. While the extended GPU features will work with WARP, they
     can be very slow.
 
+``--d3d11-output-mode=<auto|window|composition>``
+    Use a specific output mode for creating the D3D11 swapchain. "composition"
+    will not create a window. If you want to use the D3D11 GPU backend in WinUI
+    applications, you need to set this to "composition". "window" will create
+    a window and use the DWM to present the video. "auto" is the same as
+    "window". After creating the swapchain, you can get the swapchain address
+    (int64 type value) by getting the ``display-swapchain`` property.
+
 ``--d3d11-feature-level=<12_1|12_0|11_1|11_0|10_1|10_0|9_3|9_2|9_1>``
     Select a specific feature level when using the D3D11 GPU backend. By
     default, the highest available feature level is used. This option can be
@@ -7028,6 +7050,8 @@ them.
         CIE 1931 RGB (not to be confused with CIE XYZ)
     dci-p3
         DCI-P3 (Digital Cinema Colorspace), SMPTE RP431-2
+    display-p3
+        DCI-P3 with a D65 white point
     v-gamut
         Panasonic V-Gamut (VARICAM) primaries
     s-gamut
