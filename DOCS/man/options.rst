@@ -4243,16 +4243,16 @@ Demuxer
 
 ``--prefetch-playlist=<yes|no>``
     Prefetch next playlist entry while playback of the current entry is ending
-    (default: yes).
-
-    This does not prefill the cache with the video data of the next URL.
-    Prefetching video data is supported only for the current playlist entry,
-    and depends on the demuxer cache settings (on by default). This merely
-    opens the URL of the next playlist entry as soon the current URL is fully
-    read.
+    (default: no). This merely opens the URL of the next playlist entry as soon
+    as the current URL is fully read.
 
     This does **not** work with URLs resolved by the ``youtube-dl`` wrapper,
     and it won't.
+
+    This does not affect HLS streams (``.m3u8`` URLs). Such stream by itself is
+    internally a playlist of data segments, but is treated as a single media
+    item by mpv. HLS prefetching depends on the demuxer cache settings and is
+    on by default.
 
     This can occasionally make wrong prefetching decisions. For example, it
     can't predict whether you go backwards in the playlist, and assumes you
@@ -7474,7 +7474,10 @@ them.
         Blend the frame against the background color (``--background-color``,
         normally black).
     tiles
-        Blend the frame against a 16x16 gray/white tiles background (default).
+        Blend the frame against a checkerboard pattern with colors specified
+        in the ``--background-tile-color-0`` and ``--background-tile-color-1``
+        options and tile size specified in the ``--background-tile-size`` option
+        (default).
     none
         Do not blend the frame and leave the alpha as is.
 
@@ -7485,8 +7488,18 @@ them.
     Use that instead.
 
 ``--background-color=<color>``
-    Color used to draw parts of the mpv window not covered by video. See the
-    ``--sub-color`` option for how colors are defined.
+    Color used to draw parts of the mpv window not covered by video in
+    ``--background=color`` mode.
+    See the ``--sub-color`` option for how colors are defined.
+
+``--background-tile-color-0=<color>``, ``--background-tile-color-1=<color>``
+    Colors used to draw parts of the mpv window not covered by video in
+    ``--background=tiles`` mode.
+    See the ``--sub-color`` option for how colors are defined.
+
+``--background-tile-size=<1-4096>``
+    Tile size used to draw parts of the mpv window not covered by video in
+    ``--background=tiles`` mode (default: 16).
 
 ``--border-background=<none|color|tiles>``
     Same as ``--background`` but only applies to the black bar/border area of

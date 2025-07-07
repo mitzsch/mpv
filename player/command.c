@@ -6315,6 +6315,7 @@ static void cmd_track_reload(void *p)
         flags |= t->hearing_impaired_track ? TRACK_HEARING_IMPAIRED : 0;
         flags |= t->visual_impaired_track ? TRACK_VISUAL_IMPAIRED : 0;
         flags |= t->forced_track ? TRACK_FORCED : 0;
+        flags |= t->default_track ? TRACK_DEFAULT : 0;
         mp_remove_track(mpctx, t);
         nt_num = mp_add_external_file(mpctx, filename, type, cmd->abort->cancel,
                                       flags);
@@ -6335,6 +6336,7 @@ static void cmd_track_reload(void *p)
         nt->lang = bstrto0(nt, lang);
         nt->hearing_impaired_track = flags & TRACK_HEARING_IMPAIRED;
         nt->forced_track = flags & TRACK_FORCED;
+        nt->default_track = flags & TRACK_DEFAULT;
     }
 
     mp_switch_track(mpctx, nt->type, nt, 0);
@@ -7169,7 +7171,8 @@ const struct mp_cmd_def mp_cmds[] = {
                 {"select", 0}, {"auto", 1}, {"cached", 2},
                 {"hearing-impaired", TRACK_HEARING_IMPAIRED},
                 {"visual-impaired", TRACK_VISUAL_IMPAIRED},
-                {"forced", TRACK_FORCED}),
+                {"forced", TRACK_FORCED},
+                {"default", TRACK_DEFAULT}),
                 .flags = MP_CMD_OPT_ARG},
             {"title", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
             {"lang", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
@@ -7186,7 +7189,8 @@ const struct mp_cmd_def mp_cmds[] = {
                 {"select", 0}, {"auto", 1}, {"cached", 2},
                 {"hearing-impaired", TRACK_HEARING_IMPAIRED},
                 {"visual-impaired", TRACK_VISUAL_IMPAIRED},
-                {"forced", TRACK_FORCED}),
+                {"forced", TRACK_FORCED},
+                {"default", TRACK_DEFAULT}),
                 .flags = MP_CMD_OPT_ARG},
             {"title", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
             {"lang", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
@@ -7204,7 +7208,8 @@ const struct mp_cmd_def mp_cmds[] = {
                 {"hearing-impaired", TRACK_HEARING_IMPAIRED},
                 {"visual-impaired", TRACK_VISUAL_IMPAIRED},
                 {"attached-picture", TRACK_ATTACHED_PICTURE},
-                {"forced", TRACK_FORCED}),
+                {"forced", TRACK_FORCED},
+                {"default", TRACK_DEFAULT}),
                 .flags = MP_CMD_OPT_ARG},
             {"title", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
             {"lang", OPT_STRING(v.s), .flags = MP_CMD_OPT_ARG},
