@@ -121,6 +121,8 @@ struct priv {
     int64_t last_sync_qpc_time;
     int64_t vsync_duration_qpc;
     int64_t last_submit_qpc;
+
+    struct mp_dxgi_factory_ctx dxgi_ctx;
 };
 
 static struct ra_tex *get_backbuffer(struct ra_ctx *ctx)
@@ -175,7 +177,7 @@ static int d3d11_color_depth(struct ra_swapchain *sw)
     struct priv *p = sw->priv;
 
     DXGI_OUTPUT_DESC1 desc1;
-    if (!mp_get_dxgi_output_desc(p->swapchain, &desc1))
+    if (!mp_dxgi_output_desc_from_swapchain(&p->dxgi_ctx, p->swapchain, &desc1))
         desc1.BitsPerColor = 0;
 
     DXGI_SWAP_CHAIN_DESC desc;
@@ -202,44 +204,11 @@ static struct pl_color_space d3d11_target_color_space(struct ra_swapchain *sw)
 {
     struct priv *p = sw->priv;
 
-    struct pl_color_space ret = {0};
-    DXGI_OUTPUT_DESC1 desc1;
-    if (!mp_get_dxgi_output_desc(p->swapchain, &desc1))
-        return ret;
+    DXGI_OUTPUT_DESC1 desc;
+    if (mp_dxgi_output_desc_from_hwnd(&p->dxgi_ctx, vo_w32_hwnd(sw->ctx->vo), &desc))
+        return mp_dxgi_desc_to_color_space(&desc);
 
-    ret.hdr.max_luma = desc1.MaxLuminance;
-    ret.hdr.min_luma = desc1.MinLuminance;
-    ret.hdr.prim.blue.x = desc1.BluePrimary[0];
-    ret.hdr.prim.blue.y = desc1.BluePrimary[1];
-    ret.hdr.prim.green.x = desc1.GreenPrimary[0];
-    ret.hdr.prim.green.y = desc1.GreenPrimary[1];
-    ret.hdr.prim.red.x = desc1.RedPrimary[0];
-    ret.hdr.prim.red.y = desc1.RedPrimary[1];
-
-    switch (desc1.ColorSpace) {
-        case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:
-            ret.primaries = PL_COLOR_PRIM_BT_709;
-            ret.transfer = PL_COLOR_TRC_SRGB;
-            break;
-        case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709:
-            ret.primaries = PL_COLOR_PRIM_BT_709;
-            ret.transfer = PL_COLOR_TRC_LINEAR;
-            break;
-        case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
-            ret.primaries = PL_COLOR_PRIM_BT_2020;
-            ret.transfer = PL_COLOR_TRC_PQ;
-            break;
-        case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
-            ret.primaries = PL_COLOR_PRIM_BT_2020;
-            ret.transfer = PL_COLOR_TRC_SRGB;
-            break;
-        default:
-            ret.primaries = PL_COLOR_PRIM_UNKNOWN;
-            ret.transfer = PL_COLOR_TRC_UNKNOWN;
-            break;
-    }
-
-    return ret;
+    return (struct pl_color_space){0};
 }
 
 static bool d3d11_start_frame(struct ra_swapchain *sw, struct ra_fbo *out_fbo)
@@ -496,6 +465,7 @@ static void d3d11_uninit(struct ra_ctx *ctx)
         vo_w32_swapchain(ctx->vo, NULL);
     }
     SAFE_RELEASE(p->device);
+    mp_dxgi_factory_uninit(&p->dxgi_ctx);
 
     // Destroy the RA last to prevent objects we hold from showing up in D3D's
     // leak checker

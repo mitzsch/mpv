@@ -635,7 +635,7 @@ int m_config_set_option_raw(struct m_config *config,
 
     m_config_mark_co_flags(co, flags);
 
-    m_option_copy(co->opt, co->data, data);
+    m_option_copy_and_expand(config->global, co->opt, co->data, data);
     if (m_config_cache_write_opt(config->cache, co->data))
         force_self_notify_change_opt(config, co, false);
 
@@ -788,13 +788,7 @@ int m_config_set_option_node(struct m_config *config, bstr name,
     // the old value, as opposed to e.g. appending to lists.
     union m_option_value val = m_option_value_default;
 
-    if (data->format == MPV_FORMAT_STRING) {
-        bstr param = bstr0(data->u.string);
-        r = m_option_parse(mp_null_log, co->opt, name, param, &val);
-    } else {
-        r = m_option_set_node(co->opt, &val, data);
-    }
-
+    r = m_option_set_node_or_string(mp_null_log, co->opt, name, &val, data);
     if (r >= 0)
         r = m_config_set_option_raw(config, co, &val, flags);
 

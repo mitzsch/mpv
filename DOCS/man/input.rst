@@ -74,10 +74,25 @@ It's also possible to bind a command to a sequence of keys:
 
 (This is not shown in the general command syntax.)
 
-If ``a`` or ``a-b`` or ``b`` are already bound, this will run the first command
-that matches, and the multi-key command will never be called. Intermediate keys
-can be remapped to ``ignore`` in order to avoid this issue. The maximum number
-of (non-modifier) keys for combinations is currently 4.
+Key matching
+------------
+
+mpv maintains key press history. If the current key completes one or more bound
+sequences (including single-key bindings), then mpv chooses the longest. If this
+sequence is bound to ``ignore``, then tracking continues as if nothing was
+matched. Otherwise, it triggers the command bound to this sequence and clears
+the key history.
+
+Note that while single-key bindings override builtin bindings, this is not the
+case with multi-key sequences. For example, a ``b-c`` sequence in input.conf
+would be overridden by a builtin binding ``b``. In this case, if you don't care
+about ``b``, you can bind it to ``ignore``.
+
+As a more complex example, if you want to bind both ``b`` and ``a-b-c``, then it
+won't work, because ``b`` would override ``a-b-c``. However, binding ``a-b`` to
+``ignore`` would allow that, because after ``a-b`` the longest match ``a-b`` is
+ignored, and a following ``c`` would trigger the sequence ``a-b-c`` while ``b``
+alone would still work.
 
 Key names
 ---------
@@ -2802,6 +2817,18 @@ Property list
     ``video-params/avg-pq-y``
         Average PQ luminance of a frame, as reported by peak detection (in PQ, 0-1)
 
+    ``video-params/prim-red-x``, ``video-params/prim-red-y``
+        Red primary chromaticity coordinates, available only if differs from ``video-params/primaries``
+
+    ``video-params/prim-green-x``, ``video-params/prim-green-y``
+        Green primary chromaticity coordinates, available only if differs from ``video-params/primaries``
+
+    ``video-params/prim-blue-x``, ``video-params/prim-blue-y``
+        Blue primary chromaticity coordinates, available only if differs from ``video-params/primaries``
+
+    ``video-params/prim-white-x``, ``video-params/prim-white-y``
+        White point chromaticity coordinates, available only if differs from ``video-params/primaries``
+
     When querying the property with the client API using ``MPV_FORMAT_NODE``,
     or with Lua ``mp.get_property_native``, this will return a mpv_node with
     the following contents:
@@ -2837,6 +2864,14 @@ Property list
             "scene-max-b"       MPV_FORMAT_DOUBLE
             "max-pq-y"          MPV_FORMAT_DOUBLE
             "avg-pq-y"          MPV_FORMAT_DOUBLE
+            "prim-red-x"        MPV_FORMAT_DOUBLE
+            "prim-red-y"        MPV_FORMAT_DOUBLE
+            "prim-green-x"      MPV_FORMAT_DOUBLE
+            "prim-green-y"      MPV_FORMAT_DOUBLE
+            "prim-blue-x"       MPV_FORMAT_DOUBLE
+            "prim-blue-y"       MPV_FORMAT_DOUBLE
+            "prim-white-x"      MPV_FORMAT_DOUBLE
+            "prim-white-y"      MPV_FORMAT_DOUBLE
 
 ``dwidth``, ``dheight``
     Video display size. This is the video size after filters and aspect scaling
@@ -3067,6 +3102,26 @@ Property list
                 "x"        MPV_FORMAT_INT64
                 "y"        MPV_FORMAT_INT64
                 "id"       MPV_FORMAT_INT64
+
+``tablet-pos``
+    Read-only - last known tablet tool (pen) position, normalized to OSD dimensions,
+    and tool state.
+
+    Has the following sub-properties:
+
+    ``tablet-pos/x``, ``tablet-pos/y``
+        Last known coordinates of the tablet tool.
+    ``tablet-pos/tool-in-proximity``
+        Boolean - whether a tablet tool is currently in proximity of the tablet
+        surface / hovers above the tablet surface.
+    ``tablet-pos/tool-tip``,
+        The state of the tablet tool tip, ``up`` or ``down.``
+    ``tablet-pos/tool-stylus-btn1``, ``tablet-pos/tool-stylus-btn2``, ``tablet-pos/tool-stylus-btn3``
+        The state of tablet tool side buttons, ``pressed`` or ``released``.
+    ``tablet-pos/pad-focus``
+        Boolean - whether a tablet pad is currently focused.
+    ``tablet-pos/pad-btns/N``
+        The state of the Nth tablet pad button, ``pressed`` or ``released``.
 
 ``sub-ass-extradata``
     The current ASS subtitle track's extradata. There is no formatting done.

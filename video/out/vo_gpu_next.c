@@ -174,6 +174,7 @@ struct gl_next_opts {
     struct user_lut image_lut;
     struct user_lut target_lut;
     int target_hint;
+    int target_hint_mode;
     char **raw_opts;
 };
 
@@ -205,6 +206,7 @@ const struct m_sub_options gl_next_conf = {
         {"image-lut-type", OPT_CHOICE_C(image_lut.type, lut_types)},
         {"target-lut", OPT_STRING(target_lut.opt), .flags = M_OPT_FILE},
         {"target-colorspace-hint", OPT_CHOICE(target_hint, {"auto", -1}, {"no", 0}, {"yes", 1})},
+        {"target-colorspace-hint-mode", OPT_CHOICE(target_hint_mode, {"target", 0}, {"source", 1}, {"source-dynamic", 2})},
         // No `target-lut-type` because we don't support non-RGB targets
         {"libplacebo-opts", OPT_KEYVALUELIST(raw_opts)},
         {0},
@@ -214,6 +216,7 @@ const struct m_sub_options gl_next_conf = {
         .inter_preserve = true,
         .sub_hdr_peak = PL_COLOR_SDR_WHITE,
         .image_subs_hdr_peak = PL_COLOR_SDR_WHITE,
+        .target_hint = -1,
     },
     .size = sizeof(struct gl_next_opts),
     .change_flags = UPDATE_VIDEO,
@@ -345,10 +348,10 @@ static void update_overlays(struct vo *vo, struct mp_osd_res res,
                 .src = { b->src_x, b->src_y, b->src_x + b->w, b->src_y + b->h },
                 .dst = { b->x, b->y, b->x + b->dw, b->y + b->dh },
                 .color = {
-                    (c >> 24) / 255.0,
-                    ((c >> 16) & 0xFF) / 255.0,
-                    ((c >> 8) & 0xFF) / 255.0,
-                    1.0 - (c & 0xFF) / 255.0,
+                    (c >> 24) / 255.0f,
+                    ((c >> 16) & 0xFF) / 255.0f,
+                    ((c >> 8) & 0xFF) / 255.0f,
+                    (255 - (c & 0xFF)) / 255.0f,
                 }
             };
             MP_TARRAY_APPEND(p, entry->parts, entry->num_parts, part);
@@ -413,7 +416,7 @@ struct frame_priv {
 
 static int plane_data_from_imgfmt(struct pl_plane_data out_data[4],
                                   struct pl_bit_encoding *out_bits,
-                                  enum mp_imgfmt imgfmt)
+                                  enum mp_imgfmt imgfmt, bool use_uint)
 {
     struct mp_imgfmt_desc desc = mp_imgfmt_get_desc(imgfmt);
     if (!desc.num_planes || !(desc.flags & MP_IMGFLAG_HAS_COMPS))
@@ -495,7 +498,7 @@ static int plane_data_from_imgfmt(struct pl_plane_data out_data[4],
         data->pixel_stride = desc.bpp[p] / 8;
         data->type = (desc.flags & MP_IMGFLAG_TYPE_FLOAT)
                             ? PL_FMT_FLOAT
-                            : PL_FMT_UNORM;
+                            : (use_uint ? PL_FMT_UINT : PL_FMT_UNORM);
     }
 
     if (any_padded && !out_bits)
@@ -604,6 +607,23 @@ static void hwdec_release(pl_gpu gpu, struct pl_frame *frame)
     ra_hwdec_mapper_unmap(p->hwdec_mapper);
 }
 
+static bool format_supported(struct vo *vo, int format, bool use_uint)
+{
+    struct priv *p = vo->priv;
+    struct pl_bit_encoding bits;
+    struct pl_plane_data data[4] = {0};
+    int planes = plane_data_from_imgfmt(data, &bits, format, use_uint);
+    if (!planes)
+        return false;
+
+    for (int i = 0; i < planes; i++) {
+        if (!pl_plane_find_fmt(p->gpu, NULL, &data[i]))
+            return false;
+    }
+
+    return true;
+}
+
 static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src,
                       struct pl_frame *frame)
 {
@@ -667,7 +687,14 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
     } else { // swdec
 
         struct pl_plane_data data[4] = {0};
-        frame->num_planes = plane_data_from_imgfmt(data, &frame->repr.bits, mpi->imgfmt);
+        bool use_uint = false;
+
+        // At this point, we know that the format is supported, query_format()
+        // makes sure of that. Just check if we should use UINT as a fallback.
+        if (!format_supported(vo, mpi->imgfmt, false))
+            use_uint = true;
+
+        frame->num_planes = plane_data_from_imgfmt(data, &frame->repr.bits, mpi->imgfmt, use_uint);
         for (int n = 0; n < frame->num_planes; n++) {
             struct pl_plane *plane = &frame->planes[n];
             data[n].width = mp_image_plane_w(mpi, n);
@@ -824,7 +851,7 @@ static void apply_target_options(struct priv *p, struct pl_frame *target,
     // Colorspace overrides
     const struct gl_video_opts *opts = p->opts_cache->opts;
     // If swapchain returned a value use this, override is used in hint
-    if (p->output_levels && (!target->repr.levels || !hint))
+    if (p->output_levels)
         target->repr.levels = p->output_levels;
     if (opts->target_prim && (!target->color.primaries || !hint))
         target->color.primaries = opts->target_prim;
@@ -915,6 +942,36 @@ static void update_tm_viz(struct pl_color_map_params *params,
     params->visualize_hue = M_PI / 4.0;
 }
 
+static enum pl_color_primaries get_best_prim_container(const struct pl_raw_primaries *gamut)
+{
+    enum pl_color_primaries container = PL_COLOR_PRIM_UNKNOWN;
+
+    if (!pl_primaries_valid(gamut))
+        return container;
+
+    const struct pl_raw_primaries *best = NULL;
+    for (enum pl_color_primaries prim = 1; prim < PL_COLOR_PRIM_COUNT; prim++) {
+        const struct pl_raw_primaries *raw = pl_raw_primaries_get(prim);
+        if (pl_raw_primaries_similar(raw, gamut)) {
+            container = prim;
+            best = raw;
+            break;
+        }
+
+        if (pl_primaries_superset(raw, gamut) &&
+            (!best || pl_primaries_superset(best, raw)))
+        {
+            container = prim;
+            best = raw;
+        }
+    }
+
+    if (!best)
+        container = PL_COLOR_PRIM_BT_2020;
+
+    return container;
+}
+
 static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
                                      const struct mp_image *mpi);
 
@@ -1003,12 +1060,12 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
     struct ra_swapchain *sw = p->ra_ctx->swapchain;
 
     bool pass_colorspace = false;
-    struct pl_color_space target_csp;
-    // Assume HDR is supported, if query is not available
+    struct pl_color_space target_csp = {0};
     // TODO: Implement this for all backends
-    target_csp = sw->fns->target_csp
-                     ? sw->fns->target_csp(sw)
-                     : (struct pl_color_space){ .transfer = PL_COLOR_TRC_PQ };
+    if (sw->fns->target_csp)
+        target_csp = sw->fns->target_csp(sw);
+    if (target_csp.primaries == PL_COLOR_PRIM_UNKNOWN)
+        target_csp.primaries = get_best_prim_container(&target_csp.hdr.prim);
     if (!pl_color_transfer_is_hdr(target_csp.transfer)) {
         // Don't use reported display peak in SDR mode. Mostly because libplacebo
         // forcefully switches to PQ if hinting hdr metadata, ignoring the transfer
@@ -1016,43 +1073,69 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
         // very specific usecase, needs proper calibration, users can set it manually.
         target_csp.hdr.max_luma = 0;
         target_csp.hdr.min_luma = 0;
+        target_csp.hdr.max_cll = 0;
+        target_csp.hdr.max_fall = 0;
     }
 
     struct pl_color_space hint;
     bool target_hint = p->next_opts->target_hint == 1 ||
                        (p->next_opts->target_hint == -1 &&
-                        pl_color_transfer_is_hdr(target_csp.transfer));
+                        target_csp.transfer != PL_COLOR_TRC_UNKNOWN);
+    // Assume HDR is supported, if target_csp() is not available
+    if (target_csp.transfer == PL_COLOR_TRC_UNKNOWN) {
+        target_csp = (struct pl_color_space){
+            .transfer = opts->target_trc ? opts->target_trc : pl_color_space_hdr10.transfer };
+    }
     if (target_hint && frame->current) {
-        hint = frame->current->params.color;
-        float target_peak = opts->target_peak ? opts->target_peak : target_csp.hdr.max_luma;
-        float target_trc = opts->target_trc;
-        if (!target_trc) {
-            // If we are targeting HDR display, repack SDR to target trc. This way
-            // we ensure that conversion is done by mpv and not by the compositor,
-            // which is often worse in terms of quality. Do this only if we are sure
-            // that display is in HDR mode, i.e. target_csp() reported HDR transfer.
-            // libplacebo already does the same when peak > 203, but we want this
-            // for any peak value.
-            // Note: We don't have information if the compositor/driver is able to
-            // reconfigure the display, currently target_csp() is only implemented
-            // for D3D11 where we know automatic reconfiguration never happens.
-            // Also I like to minimize possible reconfigurations, and outputting  SDR
-            // in PQ is fine.
-            if (pl_color_transfer_is_hdr(target_csp.transfer) && target_csp.hdr.max_luma > 0 &&
-                !pl_color_transfer_is_hdr(frame->current->params.color.transfer))
-            {
-                target_trc = target_trc ? target_trc : target_csp.transfer;
+        const struct pl_color_space *source = &frame->current->params.color;
+        const struct pl_color_space *target = &target_csp;
+        hint = *source;
+        if (p->next_opts->target_hint_mode == 0) {
+            hint = *target;
+            if (pl_color_transfer_is_hdr(hint.transfer) && !pl_primaries_valid(&hint.hdr.prim))
+                pl_color_space_merge(&hint, source);
+            // Restore target luminance if it was present, note that we check
+            // max_luma only, this make sure that max_cll/max_fall is not take
+            // from source.
+            if (target->hdr.max_luma) {
+                hint.hdr.max_luma = target->hdr.max_luma;
+                hint.hdr.min_luma = target->hdr.min_luma;
+                hint.hdr.max_cll  = target->hdr.max_cll;
+                hint.hdr.max_fall = target->hdr.max_fall;
             }
+        }
+        if (p->next_opts->target_hint_mode == 2) { // source-dynamic
+            pl_color_space_nominal_luma_ex(pl_nominal_luma_params(
+                .color      = &hint,
+                .metadata   = PL_HDR_METADATA_ANY,
+                .scaling    = PL_HDR_NITS,
+                .out_min    = &hint.hdr.min_luma,
+                .out_max    = &hint.hdr.max_luma,
+            ));
+        }
+        // Infer missing bits now. This is important so that we don't lose
+        // information after user option overrides. For example, if the user
+        // sets target_trc to PQ, but the hint(source) is SDR, we want to fill
+        // in SDR luminance values instead of the default PQ range.
+        struct pl_color_space source_csp = *source;
+        pl_color_space_infer_map(&source_csp, &hint);
+        // Always prefer target luminance and transfer for inverse tone mapping
+        if (pl_color_transfer_is_hdr(target->transfer) && opts->tone_map.inverse) {
+            hint.transfer     = target->transfer;
+            hint.hdr.max_luma = target->hdr.max_luma;
+            hint.hdr.min_luma = target->hdr.min_luma;
+            hint.hdr.max_cll  = target->hdr.max_cll;
+            hint.hdr.max_fall = target->hdr.max_fall;
         }
         if (p->ra_ctx->fns->pass_colorspace && p->ra_ctx->fns->pass_colorspace(p->ra_ctx))
             pass_colorspace = true;
         if (opts->target_prim)
             hint.primaries = opts->target_prim;
-        if (target_trc)
-            hint.transfer = target_trc;
-        if (target_peak)
-            hint.hdr.max_luma = target_peak;
-        apply_target_contrast(p, &hint, target_csp.hdr.min_luma);
+        if (opts->target_trc)
+            hint.transfer = opts->target_trc;
+        if (opts->target_peak)
+            hint.hdr.max_luma = opts->target_peak;
+        apply_target_contrast(p, &hint, hint.hdr.min_luma);
         if (!pass_colorspace)
             pl_swapchain_colorspace_hint(p->sw, &hint);
     } else if (!target_hint) {
@@ -1083,7 +1166,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
     // Calculate target
     struct pl_frame target;
     pl_frame_from_swapchain(&target, &swframe);
-    apply_target_options(p, &target, target_csp.hdr.min_luma, target_hint);
+    apply_target_options(p, &target, hint.hdr.min_luma, target_hint && !pass_colorspace);
     update_overlays(vo, p->osd_res,
                     (frame->current && opts->blend_subs) ? OSD_DRAW_OSD_ONLY : 0,
                     PL_OVERLAY_COORDS_DST_FRAME, &p->osd_state, &target, frame->current);
@@ -1144,20 +1227,23 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
                 if (frame->redraw)
                     p->osd_sync++;
                 if (fp->osd_sync < p->osd_sync) {
-                    float rx = pl_rect_w(p->dst) / pl_rect_w(image->crop);
-                    float ry = pl_rect_h(p->dst) / pl_rect_h(image->crop);
+                    float w = pl_rect_w(opts->blend_subs == BLEND_SUBS_VIDEO ? image->crop : target.crop);
+                    float h = pl_rect_h(opts->blend_subs == BLEND_SUBS_VIDEO ? image->crop : target.crop);
+                    float rx = w / pl_rect_w(image->crop);
+                    float ry = h / pl_rect_h(image->crop);
                     struct mp_osd_res res = {
-                        .w = pl_rect_w(p->dst),
-                        .h = pl_rect_h(p->dst),
+                        .w = w,
+                        .h = h,
                         .ml = -image->crop.x0 * rx,
                         .mr = (image->crop.x1 - vo->params->w) * rx,
                         .mt = -image->crop.y0 * ry,
                         .mb = (image->crop.y1 - vo->params->h) * ry,
                         .display_par = 1.0,
                     };
+                    enum pl_overlay_coords rel = opts->blend_subs == BLEND_SUBS_VIDEO
+                        ? PL_OVERLAY_COORDS_SRC_CROP : PL_OVERLAY_COORDS_DST_CROP;
                     update_overlays(vo, res, OSD_DRAW_SUB_ONLY,
-                                    PL_OVERLAY_COORDS_DST_CROP,
-                                    &fp->subs, image, mpi);
+                                    rel, &fp->subs, image, mpi);
                     fp->osd_sync = p->osd_sync;
                 }
             } else {
@@ -1249,18 +1335,11 @@ static int query_format(struct vo *vo, int format)
     if (ra_hwdec_get(&p->hwdec_ctx, format))
         return true;
 
-    struct pl_bit_encoding bits;
-    struct pl_plane_data data[4] = {0};
-    int planes = plane_data_from_imgfmt(data, &bits, format);
-    if (!planes)
-        return false;
+    bool supported = format_supported(vo, format, false);
+    if (!supported)
+        supported = format_supported(vo, format, true);
 
-    for (int i = 0; i < planes; i++) {
-        if (!pl_plane_find_fmt(p->gpu, NULL, &data[i]))
-            return false;
-    }
-
-    return true;
+    return supported;
 }
 
 static void resize(struct vo *vo)
@@ -1477,20 +1556,23 @@ static void video_screenshot(struct vo *vo, struct voctrl_screenshot *args)
 
     struct frame_priv *fp = mpi->priv;
     if (opts->blend_subs) {
-        float rx = pl_rect_w(dst) / pl_rect_w(image.crop);
-        float ry = pl_rect_h(dst) / pl_rect_h(image.crop);
+        float w = pl_rect_w(opts->blend_subs == BLEND_SUBS_VIDEO ? image.crop : target.crop);
+        float h = pl_rect_h(opts->blend_subs == BLEND_SUBS_VIDEO ? image.crop : target.crop);
+        float rx = w / pl_rect_w(image.crop);
+        float ry = h / pl_rect_h(image.crop);
         struct mp_osd_res res = {
-            .w = pl_rect_w(dst),
-            .h = pl_rect_h(dst),
+            .w = w,
+            .h = h,
             .ml = -image.crop.x0 * rx,
             .mr = (image.crop.x1 - vo->params->w) * rx,
             .mt = -image.crop.y0 * ry,
             .mb = (image.crop.y1 - vo->params->h) * ry,
             .display_par = 1.0,
         };
+        enum pl_overlay_coords rel = opts->blend_subs == BLEND_SUBS_VIDEO
+            ? PL_OVERLAY_COORDS_SRC_CROP : PL_OVERLAY_COORDS_DST_CROP;
         update_overlays(vo, res, osd_flags,
-                        PL_OVERLAY_COORDS_DST_CROP,
-                        &fp->subs, &image, mpi);
+                        rel, &fp->subs, &image, mpi);
     } else {
         // Disable overlays when blend_subs is disabled
         update_overlays(vo, osd, osd_flags, PL_OVERLAY_COORDS_DST_FRAME,
@@ -1744,7 +1826,7 @@ static void cache_init(struct vo *vo, struct cache *cache, size_t max_size,
 
     char *dir;
     if (dir_opt && dir_opt[0]) {
-        dir = mp_get_user_path(vo, p->global, dir_opt);
+        dir = talloc_strdup(vo, dir_opt);
     } else {
         dir = mp_find_user_file(vo, p->global, "cache", "");
     }
@@ -2046,9 +2128,7 @@ static const struct pl_hook *load_hook(struct priv *p, const char *path)
             return p->user_hooks[i].hook;
     }
 
-    char *fname = mp_get_user_path(NULL, p->global, path);
-    bstr shader = stream_read_file(fname, p, p->global, 1000000000); // 1GB
-    talloc_free(fname);
+    bstr shader = stream_read_file(path, p, p->global, 1000000000); // 1GB
 
     const struct pl_hook *hook = NULL;
     if (shader.len)
@@ -2091,10 +2171,9 @@ static void update_icc_opts(struct priv *p, const struct mp_icc_opts *opts)
     if (p->icc_path && strcmp(opts->profile, p->icc_path) == 0)
         return; // ICC profile hasn't changed
 
-    char *fname = mp_get_user_path(NULL, p->global, opts->profile);
+    char *fname = opts->profile;
     MP_VERBOSE(p, "Opening ICC profile '%s'\n", fname);
     struct bstr icc = stream_read_file(fname, p, p->global, 100000000); // 100 MB
-    talloc_free(fname);
     update_icc(p, icc);
 
     // Update cached path
@@ -2117,7 +2196,7 @@ static void update_lut(struct priv *p, struct user_lut *lut)
     talloc_replace(p, lut->path, lut->opt);
 
     // Load LUT file
-    char *fname = mp_get_user_path(NULL, p->global, lut->path);
+    char *fname = lut->path;
     MP_VERBOSE(p, "Loading custom LUT '%s'\n", fname);
     const int lut_max_size = 1536 << 20; // 1.5 GiB, matches lut cache limit
     struct bstr lutdata = stream_read_file(fname, NULL, p->global, lut_max_size);
@@ -2127,7 +2206,6 @@ static void update_lut(struct priv *p, struct user_lut *lut)
     } else {
         lut->lut = pl_lut_parse_cube(p->pllog, lutdata.start, lutdata.len);
     }
-    talloc_free(fname);
     talloc_free(lutdata.start);
 }
 

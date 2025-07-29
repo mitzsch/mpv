@@ -279,6 +279,7 @@ test_flags = ['-Wdisabled-optimization',
               '-Wempty-body',
               '-Wformat',
               '-Wimplicit-fallthrough',
+              '-Woverflow',
               '-Wparentheses',
               '-Wpointer-arith',
               '-Wshadow',
@@ -1030,12 +1031,7 @@ if features['wayland']
     subdir(join_paths('video', 'out'))
 endif
 
-foreach v: ['1.39']
-    features += {'wayland-protocols-' + v.replace('.', '-'):
-        wayland['deps'][2].version().version_compare('>=' + v)}
-endforeach
-
-if features['wayland-protocols-1-39']
+if features['wayland'] and features['wayland-protocols-1-39']
     sources += files('player/clipboard/clipboard-wayland.c')
 endif
 
@@ -1197,11 +1193,6 @@ if features['egl-angle-win32']
     sources += files('video/out/opengl/context_angle.c')
 endif
 
-if features['d3d11'] or features['egl-angle-win32']
-    sources += files('video/out/gpu/d3d11_helpers.c')
-    features += {'dxgi-debug-d3d11': cc.has_header_symbol('d3d11sdklayers.h', 'DXGI_DEBUG_D3D11')}
-endif
-
 egl = dependency('egl', version: '>= 1.4.0', required: get_option('egl'))
 features += {'egl': egl.found() and gl_allowed}
 if features['egl']
@@ -1326,6 +1317,10 @@ if features['vulkan'] or (features['gl'] and features['egl'])
     sources += files('video/filter/vf_gpu.c')
 endif
 
+if features['d3d11'] or features['egl-angle-win32'] or (features['vulkan'] and win32)
+    sources += files('video/out/gpu/d3d11_helpers.c')
+    features += {'dxgi-debug-d3d11': cc.has_header_symbol('d3d11sdklayers.h', 'DXGI_DEBUG_D3D11')}
+endif
 
 # hwaccel
 ffnvcodec = dependency('ffnvcodec', version: '>= 11.1.5.1', required: false)
@@ -1787,9 +1782,8 @@ endif
 
 if get_option('cplayer')
     datadir = get_option('datadir')
-    confdir = get_option('sysconfdir')
 
-    conf_files = ['etc/mpv.conf', 'etc/input.conf',
+    conf_files = ['etc/mpv.conf', 'etc/encoding-profiles.conf', 'etc/input.conf',
                   'etc/mplayer-input.conf', 'etc/restore-old-bindings.conf',
                   'etc/restore-osc-bindings.conf']
     install_data(conf_files, install_dir: join_paths(datadir, 'doc', 'mpv'))
@@ -1804,7 +1798,6 @@ if get_option('cplayer')
     install_data('etc/mpv.fish', install_dir: fish_install_dir, rename: 'mpv.fish')
 
     install_data('etc/mpv.metainfo.xml', install_dir: join_paths(datadir, 'metainfo'))
-    install_data('etc/encoding-profiles.conf', install_dir: join_paths(confdir, 'mpv'))
 
     foreach size: ['16x16', '32x32', '64x64', '128x128']
         icon_dir = join_paths(datadir, 'icons', 'hicolor', size, 'apps')

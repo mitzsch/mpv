@@ -559,8 +559,12 @@ static int mp_property_stream_open_filename(void *ctx, struct m_property *prop,
         return M_PROPERTY_OK;
     }
     case M_PROPERTY_GET_TYPE:
-    case M_PROPERTY_GET:
-        return m_property_strdup_ro(action, arg, mpctx->stream_open_filename);
+    case M_PROPERTY_GET: {
+        char *path = mp_normalize_path(NULL, mpctx->stream_open_filename);
+        int r = m_property_strdup_ro(action, arg, path);
+        talloc_free(path);
+        return r;
+    }
     }
     return M_PROPERTY_NOT_IMPLEMENTED;
 }
@@ -2434,6 +2438,8 @@ static int property_imgparams(const struct mp_image_params *p, int action, void 
     bool has_cie_y     = pl_hdr_metadata_contains(hdr, PL_HDR_METADATA_CIE_Y);
     bool has_hdr10     = pl_hdr_metadata_contains(hdr, PL_HDR_METADATA_HDR10);
     bool has_hdr10plus = pl_hdr_metadata_contains(hdr, PL_HDR_METADATA_HDR10PLUS);
+    bool custom_prim   = pl_primaries_valid(&hdr->prim) &&
+                         !pl_raw_primaries_similar(&hdr->prim, pl_raw_primaries_get(p->color.primaries));
 
     bool has_crop = mp_rect_w(p->crop) > 0 && mp_rect_h(p->crop) > 0;
     const char *aspect_name = get_aspect_ratio_name(d_w / (double)d_h);
@@ -2489,6 +2495,14 @@ static int property_imgparams(const struct mp_image_params *p, int action, void 
         {"scene-avg",   SUB_PROP_FLOAT(hdr->scene_avg),    .unavailable = !has_hdr10plus},
         {"max-pq-y",    SUB_PROP_FLOAT(hdr->max_pq_y),     .unavailable = !has_cie_y},
         {"avg-pq-y",    SUB_PROP_FLOAT(hdr->avg_pq_y),     .unavailable = !has_cie_y},
+        {"prim-red-x",   SUB_PROP_FLOAT(hdr->prim.red.x),  .unavailable = !custom_prim },
+        {"prim-red-y",   SUB_PROP_FLOAT(hdr->prim.red.y),  .unavailable = !custom_prim },
+        {"prim-green-x", SUB_PROP_FLOAT(hdr->prim.green.x),.unavailable = !custom_prim },
+        {"prim-green-y", SUB_PROP_FLOAT(hdr->prim.green.y),.unavailable = !custom_prim },
+        {"prim-blue-x",  SUB_PROP_FLOAT(hdr->prim.blue.x), .unavailable = !custom_prim },
+        {"prim-blue-y",  SUB_PROP_FLOAT(hdr->prim.blue.y), .unavailable = !custom_prim },
+        {"prim-white-x", SUB_PROP_FLOAT(hdr->prim.white.x),.unavailable = !custom_prim },
+        {"prim-white-y", SUB_PROP_FLOAT(hdr->prim.white.y),.unavailable = !custom_prim },
         {0}
     };
 
@@ -3114,6 +3128,55 @@ static int mp_property_touch_pos(void *ctx, struct m_property *prop,
                                 get_touch_pos, (void *)pos);
 }
 
+static int mp_property_tablet_pos(void *ctx, struct m_property *prop,
+                                 int action, void *arg)
+{
+    MPContext *mpctx = ctx;
+
+    switch (action) {
+    case M_PROPERTY_GET_TYPE:
+        *(struct m_option *)arg = (struct m_option){.type = CONF_TYPE_NODE};
+        return M_PROPERTY_OK;
+
+    case M_PROPERTY_GET: {
+        int xs, ys;
+        bool tool_in_proximity;
+        bool tool_down;
+        bool tool_stylus_btn1_pressed;
+        bool tool_stylus_btn2_pressed;
+        bool tool_stylus_btn3_pressed;
+        bool pad_focus;
+        bool *pad_buttons_pressed;
+        int pad_buttons;
+        mp_input_get_tablet_pos(mpctx->input, &xs, &ys, &tool_in_proximity, &tool_down,
+            &tool_stylus_btn1_pressed, &tool_stylus_btn2_pressed, &tool_stylus_btn3_pressed,
+            &pad_focus, &pad_buttons_pressed, &pad_buttons);
+
+        struct mpv_node node;
+        node_init(&node, MPV_FORMAT_NODE_MAP, NULL);
+        node_map_add_int64(&node, "x", xs);
+        node_map_add_int64(&node, "y", ys);
+        node_map_add_flag(&node, "tool-in-proximity", tool_in_proximity);
+        node_map_add_string(&node, "tool-tip", tool_down ? "down" : "up");
+        node_map_add_string(&node, "tool-stylus-btn1", tool_stylus_btn1_pressed ? "pressed" : "released");
+        node_map_add_string(&node, "tool-stylus-btn2", tool_stylus_btn2_pressed ? "pressed" : "released");
+        node_map_add_string(&node, "tool-stylus-btn3", tool_stylus_btn3_pressed ? "pressed" : "released");
+        node_map_add_flag(&node, "pad-focus", pad_focus);
+
+        struct mpv_node *args = node_map_add(&node, "pad-btns", MPV_FORMAT_NODE_MAP);
+        for (int i = 0; i < pad_buttons; i++) {
+            char *name = mp_tprintf(2, "%d", i + 1);
+            node_map_add_string(args, name, pad_buttons_pressed[i] ? "pressed" : "released");
+        }
+
+        *(struct mpv_node *)arg = node;
+        return M_PROPERTY_OK;
+    }
+    }
+
+    return M_PROPERTY_NOT_IMPLEMENTED;
+}
+
 /// Video fps (RO)
 static int mp_property_fps(void *ctx, struct m_property *prop,
                            int action, void *arg)
@@ -3573,7 +3636,10 @@ static int mp_property_current_watch_later_dir(void *ctx, struct m_property *pro
                                                int action, void *arg)
 {
     MPContext *mpctx = ctx;
-    return m_property_strdup_ro(action, arg, mp_get_playback_resume_dir(mpctx));
+    char *dir = mp_get_playback_resume_dir(mpctx);
+    int r = m_property_strdup_ro(action, arg, dir);
+    talloc_free(dir);
+    return r;
 }
 
 static int mp_property_protocols(void *ctx, struct m_property *prop,
@@ -4406,6 +4472,7 @@ static const struct m_property mp_properties_base[] = {
 
     {"mouse-pos", mp_property_mouse_pos},
     {"touch-pos", mp_property_touch_pos},
+    {"tablet-pos", mp_property_tablet_pos},
 
     // Subs
     {"sid", mp_property_switch_track, .priv = (void *)(const int[]){0, STREAM_SUB}},
@@ -4543,7 +4610,7 @@ static const char *const *const mp_event_property_change[] = {
     E(MP_EVENT_CHANGE_PLAYLIST, "playlist", "playlist-pos", "playlist-pos-1",
       "playlist-count", "playlist/count", "playlist-current-pos",
       "playlist-playing-pos"),
-    E(MP_EVENT_INPUT_PROCESSED, "mouse-pos", "touch-pos"),
+    E(MP_EVENT_INPUT_PROCESSED, "mouse-pos", "touch-pos", "tablet-pos"),
     E(MP_EVENT_CORE_IDLE, "core-idle", "eof-reached"),
 };
 #undef E
@@ -6890,8 +6957,9 @@ static void cmd_load_input_conf(void *p)
     struct mp_cmd_ctx *cmd = p;
     struct MPContext *mpctx = cmd->mpctx;
 
-    char *config_file = cmd->args[0].v.s;
+    char *config_file = mp_get_user_path(NULL, mpctx->global, cmd->args[0].v.s);
     cmd->success = mp_input_load_config_file(mpctx->input, config_file);
+    talloc_free(config_file);
 }
 
 static void cmd_load_script(void *p)

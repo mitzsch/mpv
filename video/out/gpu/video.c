@@ -583,9 +583,7 @@ static struct bstr load_cached_file(struct gl_video *p, const char *path)
             return p->files[n].body;
     }
     // not found -> load it
-    char *fname = mp_get_user_path(NULL, p->global, path);
-    struct bstr s = stream_read_file(fname, p, p->global, 1000000000); // 1GB
-    talloc_free(fname);
+    struct bstr s = stream_read_file(path, p, p->global, 1000000000); // 1GB
     if (s.len) {
         struct cached_file new = {
             .path = talloc_strdup(p, path),
@@ -3479,7 +3477,8 @@ void gl_video_render_frame(struct gl_video *p, struct vo_frame *frame,
                                       fbo->tex->params.w, fbo->tex->params.h,
                                       fmt);
                 }
-                const struct ra_fbo *dest_fbo = r ? &(struct ra_fbo) { p->output_tex } : fbo;
+                const struct ra_fbo *dest_fbo =
+                    r ? &(struct ra_fbo) { .tex = p->output_tex, .color_space = fbo->color_space } : fbo;
                 p->output_tex_valid = r;
                 pass_draw_to_screen(p, dest_fbo, flags);
             }

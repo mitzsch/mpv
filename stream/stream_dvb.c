@@ -1090,9 +1090,12 @@ dvb_state_t *dvb_get_state(stream_t *stream)
                     conf_file_name = "channels.conf.atsc";
                     break;
                 case SYS_DVBT:
-                    if (DELSYS_IS_SET(delsys_mask[f], SYS_DVBT2))
-                        continue; /* Add all channels later with T2. */
-                    conf_file_name = "channels.conf.ter";
+                    if (DELSYS_IS_SET(delsys_mask[f], SYS_DVBT2)) {
+                        // only if ter1 is present, interpret as DVB-T, else will be loaded as DVB-T2
+                        conf_file_name = "channels.conf.ter1";
+                    } else {
+                        conf_file_name = "channels.conf.ter";
+                    }
                     break;
                 case SYS_DVBT2:
                     conf_file_name = "channels.conf.ter";
@@ -1101,9 +1104,12 @@ dvb_state_t *dvb_get_state(stream_t *stream)
                     conf_file_name = "channels.conf.isdbt";
                     break;
                 case SYS_DVBS:
-                    if (DELSYS_IS_SET(delsys_mask[f], SYS_DVBS2))
-                        continue; /* Add all channels later with S2. */
-                    conf_file_name = "channels.conf.sat";
+                    if (DELSYS_IS_SET(delsys_mask[f], SYS_DVBS2)) {
+                        // only if sat1 is present, interpret as DVB-S, else will be loaded as DVB-S2
+                        conf_file_name = "channels.conf.sat1";
+                    } else {
+                        conf_file_name = "channels.conf.sat";
+                    }
                     break;
                 case SYS_DVBS2:
                     conf_file_name = "channels.conf.sat";
@@ -1112,11 +1118,12 @@ dvb_state_t *dvb_get_state(stream_t *stream)
                     continue;
                 }
 
-                void *talloc_ctx = talloc_new(NULL);
+                void *talloc_ctx = NULL;
                 char *conf_file;
                 if (priv->opts->cfg_file && priv->opts->cfg_file[0]) {
-                    conf_file = mp_get_user_path(talloc_ctx, global, priv->opts->cfg_file);
+                    conf_file = priv->opts->cfg_file;
                 } else {
+                    talloc_ctx = talloc_new(NULL);
                     conf_file = mp_find_config_file(talloc_ctx, global, conf_file_name);
                     if (conf_file) {
                         mp_verbose(log, "Ignoring other channels.conf files.\n");
