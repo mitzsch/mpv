@@ -3162,13 +3162,13 @@ Subtitles
     Default: ``no``.
 
 ``--sub-filter-sdh-enclosures=<string>``
-    Specify a string of characters that ``--sub-filter-sdh`` will use to potentially
-    remove text. Text that is enclosed within characters specified by this string will
-    be removed. Note that bracket characters with known pairs (such as ``(`` or ``[``)
-    will be mapped internally to their matching right hand character, so you only need
-    to specify left hand characters.
+    Specify pairs of characters that ``--sub-filter-sdh`` will use to
+    potentially remove text. This is a string list option. See `List Options`_
+    for details. Text that is enclosed within each specified pair will be
+    removed. Note that parenthesis pairs (normal and full width) are treated as
+    a special case and require ``--sub-fitler-sdh-harder`` to be removed.
 
-    Default: ``([（``.
+    Default: ``(),[],（）``
 
 ``--sub-filter-regex-...=...``
     Set a list of regular expressions to match on text subtitles, and remove any
@@ -3711,11 +3711,14 @@ Window
     environments. This functionality was removed in 0.33.0, but it is possible to
     call the ``xdg-screensaver`` command line program from a user script instead.
 
-``--wid=<ID>``
+``--wid=<ID|-1>``
     This tells mpv to attach to an existing window. If a VO is selected that
     supports this option, it will use that window for video output. mpv will
     scale the video to the size of this window, and will add black bars to
     compensate if the aspect ratio of the video is different.
+
+    An ID of value ``-1`` is interpreted specially, and mpv will detach from
+    the currently attached window to its own window.
 
     On X11, the ID is interpreted as a ``Window`` on X11. Unlike
     MPlayer/mplayer2, mpv always creates its own window, and sets the wid
