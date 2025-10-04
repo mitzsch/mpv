@@ -986,7 +986,8 @@ void mp_image_params_guess_csp(struct mp_image_params *params)
             }
         }
         if (params->color.transfer == PL_COLOR_TRC_UNKNOWN)
-            params->color.transfer = PL_COLOR_TRC_BT_1886;
+            params->color.transfer = params->repr.levels == PL_COLOR_LEVELS_LIMITED ?
+                                        PL_COLOR_TRC_BT_1886 : PL_COLOR_TRC_SRGB;
     } else if (forced_csp == PL_COLOR_SYSTEM_RGB) {
         params->repr.sys = PL_COLOR_SYSTEM_RGB;
         params->repr.levels = PL_COLOR_LEVELS_FULL;
@@ -1101,8 +1102,16 @@ struct mp_image *mp_image_from_av_frame(struct AVFrame *src)
         dst->params.stereo3d = p->stereo3d;
         // Might be incorrect if colorspace changes.
         dst->params.light = p->light;
+#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(60, 11, 100) || PL_API_VER < 356
         dst->params.repr.alpha = p->repr.alpha;
+#endif
     }
+
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(60, 11, 100) && PL_API_VER >= 356
+    // mp_image_setfmt sets to PL_ALPHA_INDEPENDENT, if format has alpha.
+    if (dst->params.repr.alpha == PL_ALPHA_INDEPENDENT)
+        dst->params.repr.alpha = pl_alpha_from_av(src->alpha_mode);
+#endif
 
     sd = av_frame_get_side_data(src, AV_FRAME_DATA_DISPLAYMATRIX);
     if (sd) {

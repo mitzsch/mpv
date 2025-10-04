@@ -427,11 +427,11 @@ jobs:
 
   openbsd:
     runs-on: ubuntu-latest # until https://github.com/actions/runner/issues/385
-    timeout-minutes: 30 # avoid any weirdness with the VM
+    timeout-minutes: 15 # avoid any weirdness with the VM
     steps:
     - uses: actions/checkout@v4
     - name: Test in OpenBSD VM
-      uses: cross-platform-actions/action@v0.28.0
+      uses: cross-platform-actions/action@v0.29.0
       with:
         operating_system: openbsd
         version: '7.7'
@@ -473,14 +473,14 @@ jobs:
 
   freebsd:
     runs-on: ubuntu-latest # until https://github.com/actions/runner/issues/385
-    timeout-minutes: 30 # avoid any weirdness with the VM
+    timeout-minutes: 15 # avoid any weirdness with the VM
     steps:
     - uses: actions/checkout@v4
     - name: Test in FreeBSD VM
-      uses: cross-platform-actions/action@v0.28.0
+      uses: cross-platform-actions/action@v0.29.0
       with:
         operating_system: freebsd
-        version: '14.2'
+        version: '14.3'
         run: |
             sudo pkg update
             sudo pkg install -y \
