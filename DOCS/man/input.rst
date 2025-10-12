@@ -1419,22 +1419,30 @@ Screenshot Commands
 
     Multiple flags are available (some can be combined with ``+``):
 
+    <video>
+        Save the video image in its original resolution, without OSD or
+        subtitles. This is the default when no flag is specified, and it does
+        not need to be explicitly added when combined with other flags.
+    <scaled>
+        Save the video image in the current playback resolution.
     <subtitles> (default)
-        Save the video image, in its original resolution, and with subtitles.
+        Save the video image with subtitles.
         Some video outputs may still include the OSD in the output under certain
         circumstances.
-    <video>
-        Like ``subtitles``, but typically without OSD or subtitles. The exact
-        behavior depends on the selected video output.
+    <osd>
+        Save the video image with OSD.
     <window>
-        Save the contents of the mpv window. Typically scaled, with OSD and
-        subtitles. The exact behavior depends on the selected video output.
+        Save the contents of the mpv window, with OSD and subtitles.
+        This is an alias of ``scaled+subtitles+osd``.
     <each-frame>
         Take a screenshot each frame. Issue this command again to stop taking
         screenshots. Note that you should disable frame-dropping when using
         this mode - or you might receive duplicate images in cases when a
         frame was dropped. This flag can be combined with the other flags,
         e.g. ``video+each-frame``.
+
+    The exact behaviors of all flags other than ``each-frame`` depend on the
+    selected video output.
 
     Older mpv versions required passing ``single`` and ``each-frame`` as
     second argument (and did not have flags). This syntax is still understood,
@@ -1462,9 +1470,10 @@ Screenshot Commands
     expansion as described in `Property Expansion`_.
 
 ``screenshot-raw [<flags> [<format>]]``
-    Return a screenshot in memory. This can be used only through the client
-    API. The MPV_FORMAT_NODE_MAP returned by this command has the ``w``, ``h``,
-    ``stride`` fields set to obvious contents.
+    Return a screenshot in memory. This can be used only through the client API
+    or from a script using ``mp.command_native``. The MPV_FORMAT_NODE_MAP
+    returned by this command has the ``w``, ``h``, ``stride`` fields set to
+    obvious contents.
 
     The ``format`` field is set to the format of the screenshot image data.
     This can be controlled by the ``format`` argument. The format can be one of
@@ -4037,11 +4046,42 @@ Property list
 
 ``command-list``
     The list of input commands. This returns an array of maps, where each map
-    node represents a command. This map currently only has a single entry:
-    ``name`` for the name of the command. (This property is supposed to be a
-    replacement for ``--input-cmdlist``. The option dumps some more
-    information, but it's a valid feature request to extend this property if
-    needed.)
+    node represents a command. This map has the following entries:
+
+    ``name``
+        The name of the command.
+
+    ``vararg``
+        Whether the command accepts a variable number of arguments.
+
+    ``args``
+        An array of maps, where each map node represents an argument with the
+        following entries:
+
+        ``name``
+            The name of the argument.
+
+        ``type``
+            The name of the argument type, like ``String`` or ``Integer``.
+
+        ``optional``
+            Whether the argument is optional.
+
+    When querying the property with the client API using ``MPV_FORMAT_NODE``,
+    or with Lua ``mp.get_property_native``, this will return a mpv_node with
+    the following contents:
+
+    ::
+
+        MPV_FORMAT_NODE_ARRAY
+            MPV_FORMAT_NODE_MAP (for each command entry)
+                "name"    MPV_FORMAT_STRING
+                "vararg"  MPV_FORMAT_FLAG
+                "args"    MPV_FORMAT_NODE_ARRAY
+                    MPV_FORMAT_NODE_MAP
+                        "name"     MPV_FORMAT_STRING
+                        "type"     MPV_FORMAT_STRING
+                        "optional" MPV_FORMAT_FLAG
 
 ``input-bindings``
     The list of current input key bindings. This returns an array of maps,

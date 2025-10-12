@@ -168,6 +168,7 @@ struct gl_next_opts {
     int sub_hdr_peak;
     int image_subs_hdr_peak;
     int border_background;
+    float background_blur_radius;
     float corner_rounding;
     bool inter_preserve;
     struct user_lut lut;
@@ -198,7 +199,13 @@ const struct m_sub_options gl_next_conf = {
         {"border-background", OPT_CHOICE(border_background,
             {"none",  BACKGROUND_NONE},
             {"color", BACKGROUND_COLOR},
-            {"tiles", BACKGROUND_TILES})},
+            {"tiles", BACKGROUND_TILES}
+#if PL_API_VER < 355
+            )},
+#else
+            ,{"blur", BACKGROUND_BLUR})},
+        {"background-blur-radius", OPT_FLOAT(background_blur_radius)},
+#endif
         {"corner-rounding", OPT_FLOAT(corner_rounding), M_RANGE(0, 1)},
         {"interpolation-preserve", OPT_BOOL(inter_preserve)},
         {"lut", OPT_STRING(lut.opt), .flags = M_OPT_FILE},
@@ -215,6 +222,7 @@ const struct m_sub_options gl_next_conf = {
     },
     .defaults = &(struct gl_next_opts) {
         .border_background = BACKGROUND_COLOR,
+        .background_blur_radius = 16.0f,
         .inter_preserve = true,
         .sub_hdr_peak = PL_COLOR_SDR_WHITE,
         .image_subs_hdr_peak = PL_COLOR_SDR_WHITE,
@@ -663,6 +671,10 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
         .user_data = mpi,
     };
 
+    const struct gl_video_opts *opts = p->opts_cache->opts;
+    if (opts->hdr_reference_white && !pl_color_transfer_is_hdr(frame->color.transfer))
+        frame->color.hdr.max_luma = opts->hdr_reference_white;
+
     if (fp->hwdec) {
 
         struct mp_imgfmt_desc desc = mp_imgfmt_get_desc(par.imgfmt);
@@ -863,6 +875,10 @@ static void apply_target_options(struct priv *p, struct pl_frame *target,
         target->color.transfer = opts->target_trc;
     if (opts->target_peak && (!target->color.hdr.max_luma || !hint))
         target->color.hdr.max_luma = opts->target_peak;
+    if (opts->hdr_reference_white && (!target->color.hdr.max_luma || !hint) &&
+        !pl_color_transfer_is_hdr(target->color.transfer)) {
+        target->color.hdr.max_luma = opts->hdr_reference_white;
+    }
     if ((!target->color.hdr.min_luma || !hint))
         apply_target_contrast(p, &target->color, min_luma);
     if (opts->target_gamut) {
@@ -1089,7 +1105,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
                        (p->next_opts->target_hint == -1 &&
                         target_csp.transfer != PL_COLOR_TRC_UNKNOWN);
     // Assume HDR is supported, if target_csp() is not available
-    if (target_csp.transfer == PL_COLOR_TRC_UNKNOWN) {
+    // TODO: Remove this fallback when all backends support target_csp()
+    bool target_unknown = target_csp.transfer == PL_COLOR_TRC_UNKNOWN;
+    if (target_unknown) {
         target_csp = (struct pl_color_space){
             .transfer = opts->target_trc ? opts->target_trc : pl_color_space_hdr10.transfer };
     }
@@ -1105,6 +1123,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
             hint = *target;
             if (pl_color_transfer_is_hdr(hint.transfer) && !pl_primaries_valid(&hint.hdr.prim))
                 pl_color_space_merge(&hint, source);
+            if (target_unknown && !opts->target_trc && !pl_color_transfer_is_hdr(source->transfer))
+                hint = *source;
             // Restore target luminance if it was present, note that we check
             // max_luma only, this make sure that max_cll/max_fall is not take
             // from source.
@@ -1160,6 +1180,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
             hint.transfer = opts->target_trc;
         if (opts->target_peak)
             hint.hdr.max_luma = opts->target_peak;
+        if (opts->hdr_reference_white && !pl_color_transfer_is_hdr(hint.transfer))
+            hint.hdr.max_luma = opts->hdr_reference_white;
         // Always set maxCLL, display uses this metadata and we shouldn't let it
         // fallback to default value.
         if (!hint.hdr.max_cll)
@@ -2398,13 +2420,19 @@ static void update_render_options(struct vo *vo)
     pars->params.disable_fbos = opts->dumb_mode == 1;
 
 #if PL_API_VER >= 346
-    int map_background_types[3] = {
-        PL_CLEAR_SKIP,  // BACKGROUND_NONE
-        PL_CLEAR_COLOR, // BACKGROUND_COLOR
-        PL_CLEAR_TILES, // BACKGROUND_TILES
+    static const int map_background_types[] = {
+        [BACKGROUND_NONE]  = PL_CLEAR_SKIP,
+        [BACKGROUND_COLOR] = PL_CLEAR_COLOR,
+        [BACKGROUND_TILES] = PL_CLEAR_TILES,
+#if PL_API_VER >= 355
+        [BACKGROUND_BLUR]  = PL_CLEAR_BLUR,
+#endif
     };
     pars->params.background = map_background_types[opts->background];
     pars->params.border = map_background_types[p->next_opts->border_background];
+#if PL_API_VER >= 355
+    pars->params.blur_radius = p->next_opts->background_blur_radius;
+#endif
 #else
     pars->params.blend_against_tiles = opts->background == BACKGROUND_TILES;
 #endif

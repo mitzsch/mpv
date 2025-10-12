@@ -261,15 +261,15 @@ Available mpv-only filters are:
         :dci-p3:       DCI-P3 (Digital Cinema)
         :v-gamut:      Panasonic V-Gamut primaries
 
-    ``<gamma>``
-       Gamma function the source file was encoded with. Normally this should be set
+    ``<transfer>`` or ``<gamma>``
+       Transfer function the source file was encoded with. Normally this should be set
        in the file header, but when playing broken or mistagged files this can be
        used to override the setting.
 
        This option only affects video output drivers that perform color management.
 
        If this option is set to ``auto`` (which is the default), the gamma will
-       be set to BT.1886 for YCbCr content, sRGB for RGB content and Linear for
+       be set to BT.1886 for YCbCr content, sRGB for RGB content and st428 for
        XYZ content.
 
        Available gamma functions are:
@@ -290,6 +290,7 @@ Available mpv-only filters are:
        :v-log:        Panasonic V-Log transfer curve
        :s-log1:       Sony S-Log1 transfer curve
        :s-log2:       Sony S-Log2 transfer curve
+       :st428:        Digital Cinema Distribution Master (XYZ)
 
     ``<sig-peak>``
         Reference peak illumination for the video file, relative to the
@@ -321,6 +322,27 @@ Available mpv-only filters are:
     ``<hdr10plus=yes|no>``
         Whether or not to include HDR10+ metadata (default: yes). If
         disabled, any HDR10+ metadata will be stripped from frames.
+
+    ``<min-luma>``
+        Set the minimum luminance value for the mastering display metadata.
+        This is a float value in nits (cd/m²).
+
+        .. note::
+
+            0.0 means undefined, which is the default. To set 0.0 as actual value,
+            use a very small value like 1e-6.
+
+    ``<max-luma>``
+        Set the maximum luminance value for the mastering display metadata.
+        This is a float value in nits (cd/m²).
+
+    ``<max_cll>``
+        Set the maximum content light level for the mastering display
+        metadata. This is a float value in nits (cd/m²).
+
+    ``<max_fall>``
+        Set the maximum frame-average light level for the mastering
+        display metadata. This is a float value in nits (cd/m²).
 
     ``<film-grain=yes|no>``
         Whether or not to include film grain metadata (default: yes). If

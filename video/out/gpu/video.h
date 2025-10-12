@@ -77,6 +77,7 @@ enum background_type {
     BACKGROUND_NONE = 0,
     BACKGROUND_COLOR,
     BACKGROUND_TILES,
+    BACKGROUND_BLUR,
 };
 
 enum blend_subs_mode {
@@ -137,6 +138,7 @@ struct gl_video_opts {
     int target_prim;
     int target_trc;
     int target_peak;
+    int hdr_reference_white;
     int target_contrast;
     int target_gamut;
     struct gl_tone_map_opts tone_map;
