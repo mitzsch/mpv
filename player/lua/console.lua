@@ -789,7 +789,7 @@ local function render()
         ass:pos(x, y)
         ass:append("{\\1c&H" .. back_color .. "&\\1a&H" .. back_alpha ..
                    "&\\bord" .. opts.menu_outline_size .. "\\3c&H" ..
-                   color_option_to_ass(opts.menu_outline_color) .. "&}")
+                   color_option_to_ass(opts.menu_outline_color) .. "\\blur0&}")
         if border_style == "background-box" then
             ass:append("{\\4a&Hff&}")
         end
@@ -1333,13 +1333,8 @@ end
 -- Returns a string of UTF-8 text from the clipboard (or the primary selection)
 local function get_clipboard(clip)
     if platform == "x11" then
-        local res = utils.subprocess({
-            args = { "xclip", "-selection", clip and "clipboard" or "primary", "-out" },
-            playback_only = false,
-        })
-        if not res.error then
-            return res.stdout
-        end
+        local property = clip and "clipboard/text" or "clipboard/text-primary"
+        return mp.get_property(property, "")
     elseif platform == "wayland" then
         if mp.get_property("current-clipboard-backend") == "wayland" then
             local property = clip and "clipboard/text" or "clipboard/text-primary"

@@ -303,6 +303,9 @@ struct vo_wayland_preferred_description_info {
     struct vo_wayland_state *wl;
     bool is_parametric;
     struct pl_color_space csp;
+    float min_luma;
+    float max_luma;
+    float ref_luma;
     void *icc_file;
     uint32_t icc_size;
 };
@@ -1699,8 +1702,8 @@ static void surface_handle_enter(void *data, struct wl_surface *wl_surface,
     if (outputs == 1)
         update_output_geometry(wl, old_geometry, old_output_geometry);
 
-    MP_VERBOSE(wl, "Surface entered output %s %s (0x%x), scale = %f, refresh rate = %f Hz\n",
-               wl->current_output->make, wl->current_output->model,
+    MP_VERBOSE(wl, "Surface entered output %s %s (%s) (0x%x), scale = %f, refresh rate = %f Hz\n",
+               wl->current_output->make, wl->current_output->model, wl->current_output->name,
                wl->current_output->id, wl->scaling_factor, wl->current_output->refresh_rate);
 
     wl->pending_vo_events |= VO_EVENT_WIN_STATE;
@@ -1997,19 +2000,22 @@ static const struct wp_fractional_scale_v1_listener fractional_scale_listener = 
     preferred_scale,
 };
 
-static void log_color_space(struct mp_log *log, const struct pl_color_space *csp)
+static void log_color_space(struct mp_log *log, struct vo_wayland_preferred_description_info *wd)
 {
+    const struct pl_color_space *csp = &wd->csp;
     mp_verbose(log,
         "transfer: %s, primaries: %s\n"
-        "max_cll=%f, max_fall=%f, min_luma=%f, max_luma=%f\n"
-        "raw prims: red.x=%f,   red.y=%f,\n"
-        "           green.x=%f, green.y=%f,\n"
-        "           blue.x=%f,  blue.y=%f,\n"
-        "           white.x=%f, white.y=%f\n",
+        "transfer: min_luma=%f, max_luma=%f, ref_luma=%f\n"
+        "target: min_luma=%f, max_luma=%f, max_cll=%f, max_fall=%f\n"
+        "        raw prims: red.x=%f,   red.y=%f,\n"
+        "                   green.x=%f, green.y=%f,\n"
+        "                   blue.x=%f,  blue.y=%f,\n"
+        "                   white.x=%f, white.y=%f\n",
         m_opt_choice_str(pl_csp_trc_names,   csp->transfer),
         m_opt_choice_str(pl_csp_prim_names, csp->primaries),
-        csp->hdr.max_cll,  csp->hdr.max_fall,
-        csp->hdr.min_luma, csp->hdr.max_luma,
+        wd->min_luma, wd->max_luma, wd->ref_luma,
+        csp->hdr.min_luma,  csp->hdr.max_luma,
+        csp->hdr.max_cll, csp->hdr.max_fall,
         csp->hdr.prim.red.x,   csp->hdr.prim.red.y,
         csp->hdr.prim.green.x, csp->hdr.prim.green.y,
         csp->hdr.prim.blue.x,  csp->hdr.prim.blue.y,
@@ -2153,7 +2159,11 @@ static void info_done(void *data, struct wp_image_description_info_v1 *image_des
     if (wd->is_parametric) {
         wl->preferred_csp = wd->csp;
         MP_VERBOSE(wl, "Preferred surface feedback received:\n");
-        log_color_space(wl->log, &wl->preferred_csp);
+        log_color_space(wl->log, wd);
+        if (wd->csp.hdr.max_luma > wd->ref_luma) {
+            MP_VERBOSE(wl, "Setting preferred transfer to PQ for HDR output.\n");
+            wl->preferred_csp.transfer = PL_COLOR_TRC_PQ;
+        }
     } else {
         if (wd->icc_file) {
             if (wl->icc_size) {
@@ -2217,6 +2227,12 @@ static void info_tf_named(void *data, struct wp_image_description_info_v1 *image
 static void info_luminances(void *data, struct wp_image_description_info_v1 *image_description_info,
                             uint32_t min_lum, uint32_t max_lum, uint32_t reference_lum)
 {
+    struct vo_wayland_preferred_description_info *wd = data;
+    if (!wd->is_parametric)
+        return;
+    wd->min_luma = min_lum / (float)WAYLAND_MIN_LUM_FACTOR;
+    wd->max_luma = max_lum;
+    wd->ref_luma = reference_lum;
 }
 
 static void info_target_primaries(void *data, struct wp_image_description_info_v1 *image_description_info,
@@ -3319,8 +3335,8 @@ static void remove_output(struct vo_wayland_output *out)
     if (!out)
         return;
 
-    MP_VERBOSE(out->wl, "Deregistering output %s %s (0x%x)\n", out->make,
-               out->model, out->id);
+    MP_VERBOSE(out->wl, "Deregistering output %s %s (%s) (0x%x)\n", out->make,
+               out->model, out->name, out->id);
     wl_list_remove(&out->link);
     wl_output_destroy(out->output);
     talloc_free(out->make);

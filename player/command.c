@@ -8056,7 +8056,9 @@ void mp_option_run_callback(struct MPContext *mpctx, struct mp_option_callback *
 #if HAVE_LIBBLURAY
     if (opt_ptr == &opts->stream_bluray_opts->angle) {
         struct demuxer *demuxer = mpctx->demuxer;
-        if (mpctx->playback_initialized && demuxer && demuxer->stream && strcmp(demuxer->stream->info->name, "bdvm/bluray")) {
+        if (mpctx->playback_initialized && demuxer && demuxer->stream &&
+                (!strcmp(demuxer->stream->info->name, "bd") ||
+                 !strcmp(demuxer->stream->info->name, "bdmv/bluray"))) {
             int angle = opts->stream_bluray_opts->angle - 1;
             stream_control(demuxer->stream, STREAM_CTRL_SET_ANGLE, &angle);
         }
@@ -8119,6 +8121,9 @@ void mp_option_run_callback(struct MPContext *mpctx, struct mp_option_callback *
 
     if (opt_ptr == &opts->vo->taskbar_progress)
         update_vo_playback_state(mpctx);
+
+    if (opt_ptr == &opts->force_vo)
+        handle_force_window(mpctx, false);
 
     if (opt_ptr == &opts->image_display_duration && mpctx->vo_chain
         && mpctx->vo_chain->is_sparse && !mpctx->ao_chain

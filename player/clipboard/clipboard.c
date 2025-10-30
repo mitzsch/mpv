@@ -24,6 +24,7 @@
 
 struct clipboard_opts {
     bool monitor;
+    bool xwayland;
     struct m_obj_settings *backends;
 };
 
@@ -31,6 +32,7 @@ struct clipboard_opts {
 extern const struct clipboard_backend clipboard_backend_win32;
 extern const struct clipboard_backend clipboard_backend_mac;
 extern const struct clipboard_backend clipboard_backend_wayland;
+extern const struct clipboard_backend clipboard_backend_x11;
 extern const struct clipboard_backend clipboard_backend_vo;
 
 static const struct clipboard_backend *const clipboard_backend_list[] = {
@@ -42,6 +44,9 @@ static const struct clipboard_backend *const clipboard_backend_list[] = {
 #endif
 #if HAVE_WAYLAND && HAVE_WAYLAND_PROTOCOLS_1_39
     &clipboard_backend_wayland,
+#endif
+#if HAVE_X11_CLIPBOARD
+    &clipboard_backend_x11,
 #endif
     &clipboard_backend_vo,
 };
@@ -70,6 +75,7 @@ static const struct m_obj_list backend_obj_list = {
 const struct m_sub_options clipboard_conf = {
     .opts = (const struct m_option[]) {
         {"monitor", OPT_BOOL(monitor), .flags = UPDATE_CLIPBOARD},
+        {"xwayland", OPT_BOOL(xwayland), .flags = UPDATE_CLIPBOARD},
         {"backends", OPT_SETTINGSLIST(backends, &backend_obj_list),
          .flags = UPDATE_CLIPBOARD},
         {0}
@@ -79,6 +85,7 @@ const struct m_sub_options clipboard_conf = {
             {.name = "win32", .enabled = true},
             {.name = "mac", .enabled = true},
             {.name = "wayland", .enabled = true},
+            {.name = "x11", .enabled = true},
             {.name = "vo", .enabled = true},
             {0}
         }
@@ -161,9 +168,10 @@ void reinit_clipboard(struct MPContext *mpctx)
     if (opts->backends && opts->backends[0].name) {
         struct clipboard_init_params params = {
             .mpctx = mpctx,
-            .flags = opts->monitor ? CLIPBOARD_INIT_ENABLE_MONITORING : 0,
             .backends = opts->backends,
         };
+        params.flags |= opts->monitor ? CLIPBOARD_INIT_ENABLE_MONITORING : 0;
+        params.flags |= opts->xwayland ? CLIPBOARD_INIT_ENABLE_XWAYLAND : 0;
         mpctx->clipboard = mp_clipboard_create(&params, mpctx->global);
     }
     talloc_free(opts);
