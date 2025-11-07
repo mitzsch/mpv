@@ -739,19 +739,16 @@ if features['rubberband']
     sources += files('audio/filter/af_rubberband.c')
 endif
 
-sdl2 = dependency('sdl2', required: get_option('sdl2'))
-features += {'sdl2': sdl2.found()}
-if features['sdl2']
-    dependencies += sdl2
-endif
+sdl2 = dependency('sdl2', required: false)
 
 sdl2_gamepad = get_option('sdl2-gamepad').require(
-    features['sdl2'],
+    sdl2.found(),
     error_message: 'sdl2 was not found!',
 )
 features += {'sdl2-gamepad': sdl2_gamepad.allowed()}
 if features['sdl2-gamepad']
     sources += files('input/sdl_gamepad.c')
+    dependencies += sdl2
 endif
 
 uchardet_opt = get_option('uchardet').require(
@@ -895,12 +892,13 @@ if features['pulse']
 endif
 
 sdl2_audio = get_option('sdl2-audio').require(
-    features['sdl2'],
+    sdl2.found(),
     error_message: 'sdl2 was not found!',
 )
 features += {'sdl2-audio': sdl2_audio.allowed()}
 if features['sdl2-audio']
     sources += files('audio/out/ao_sdl.c')
+    dependencies += sdl2
 endif
 
 sndio = dependency('sndio', required: get_option('sndio'))
@@ -975,12 +973,13 @@ if features['jpeg']
 endif
 
 sdl2_video = get_option('sdl2-video').require(
-    features['sdl2'],
+    sdl2.found(),
     error_message: 'sdl2 was not found!',
 )
 features += {'sdl2-video': sdl2_video.allowed()}
 if features['sdl2-video']
     sources += files('video/out/vo_sdl.c')
+    dependencies += sdl2
 endif
 
 shaderc = dependency('shaderc', required:
@@ -1844,7 +1843,8 @@ if get_option('cplayer')
         osxbundle = find_program(join_paths(tools_directory, 'osxbundle.py'), required: true)
         custom_target('macos-bundle',
             output: 'mpv.app',
-            command: [osxbundle, mpv.full_path(), '@SOURCE_ROOT@'],
+            depends: version_h,
+            command: [osxbundle, mpv, '@SOURCE_ROOT@', '-c', get_option('macos-bundle-category')],
         )
     endif
 
@@ -1875,6 +1875,10 @@ endif
 
 if get_option('fuzzers')
     subdir('fuzzers')
+endif
+
+if features['sdl2-audio'] or features['sdl2-gamepad'] or features['sdl2-video']
+    warning('You are building with optional SDL2 support. If you encounter build issues, try disabling it.')
 endif
 
 summary({'d3d11': features['d3d11'],

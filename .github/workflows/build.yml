@@ -228,16 +228,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: "macos-13"
-            arch: "intel"
-            xcode: "Xcode_14.1"
-            homebrew: "2e821e2d8ae38540311cd6ec60f6e1b23d61d167"
           - os: "macos-14"
             arch: "arm"
-            xcode: "Xcode_15.2"
+            xcode: "Xcode_15.0"
           - os: "macos-15"
             arch: "arm"
-          - os: "macos-15"
+          - os: "macos-15-intel"
+          - os: "macos-26"
+            arch: "arm"
+          - os: "macos-26"
             arch: "test"
             swift: "-target arm64-apple-macosx10.15"
             target: "10.15"
@@ -303,7 +302,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ matrix.arch != 'test' }}
         with:
-          name: mpv-${{ matrix.os }}-${{ matrix.arch }}
+          name: mpv-${{ matrix.os }}${{ matrix.arch != '' && format('-{0}', matrix.arch) || '' }}
           path: mpv.tar.gz
 
   linux:
@@ -341,7 +340,6 @@ jobs:
       - name: Run meson tests
         id: tests
         run: |
-          export LSAN_OPTIONS="suppressions=${GITHUB_WORKSPACE}/.lsan_suppressions"
           meson test -C build
 
       - name: Print meson test log
@@ -364,7 +362,6 @@ jobs:
         run: |
           meson setup build \
             --werror        \
-            -Dc_args="-Wno-error=deprecated -Wno-error=deprecated-declarations" \
             -Dfuzzers=true -Dlibmpv=true -Dcplayer=false
           meson compile -C build fuzzers
 
