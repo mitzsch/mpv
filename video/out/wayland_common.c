@@ -182,6 +182,7 @@ struct vo_wayland_output {
     uint32_t flags;
     int phys_width;
     int phys_height;
+    int transform;
     int scale;
     double refresh_rate;
     char *make;
@@ -301,7 +302,6 @@ struct vo_wayland_text_input {
 
 struct vo_wayland_preferred_description_info {
     struct vo_wayland_state *wl;
-    bool is_parametric;
     struct pl_color_space csp;
     float min_luma;
     float max_luma;
@@ -323,7 +323,7 @@ static int spawn_cursor(struct vo_wayland_state *wl);
 static void add_feedback(struct vo_wayland_feedback_pool *fback_pool,
                          struct wp_presentation_feedback *fback);
 static void apply_keepaspect(struct vo_wayland_state *wl, int *width, int *height);
-static void get_compositor_preferred_description(struct vo_wayland_state *wl, bool parametric);
+static void get_compositor_preferred_description(struct vo_wayland_state *wl);
 static void get_shape_device(struct vo_wayland_state *wl, struct vo_wayland_seat *s);
 static void guess_focus(struct vo_wayland_state *wl);
 static void handle_key_input(struct vo_wayland_seat *s, uint32_t key, uint32_t state, bool no_emit);
@@ -1598,6 +1598,7 @@ static void output_handle_geometry(void *data, struct wl_output *wl_output,
     output->geometry.y0 = y;
     output->phys_width = phys_width;
     output->phys_height = phys_height;
+    output->transform = transform;
 }
 
 static void output_handle_mode(void *data, struct wl_output *wl_output,
@@ -1621,16 +1622,20 @@ static void output_handle_done(void *data, struct wl_output *wl_output)
     struct vo_wayland_output *o = data;
     struct vo_wayland_state *wl = o->wl;
 
+    if (o->transform % 2)
+        MPSWAP(int, o->geometry.x1, o->geometry.y1);
+
     o->geometry.x1 += o->geometry.x0;
     o->geometry.y1 += o->geometry.y0;
 
     MP_VERBOSE(o->wl, "Registered output %s %s (%s) (0x%x):\n"
                "\tx: %dpx, y: %dpx\n"
                "\tw: %dpx (%dmm), h: %dpx (%dmm)\n"
+               "\ttransform: %d\n"
                "\tscale: %f\n"
                "\tHz: %f\n", o->make, o->model, o->name, o->id, o->geometry.x0,
                o->geometry.y0, mp_rect_w(o->geometry), o->phys_width,
-               mp_rect_h(o->geometry), o->phys_height,
+               mp_rect_h(o->geometry), o->phys_height, o->transform,
                o->scale / WAYLAND_SCALE_FACTOR, o->refresh_rate);
 
     /* If we satisfy this conditional, something about the current
@@ -2034,25 +2039,9 @@ static void supported_feature(void *data, struct wp_color_manager_v1 *color_mana
     struct vo_wayland_state *wl = data;
 
     switch (feature) {
-    case WP_COLOR_MANAGER_V1_FEATURE_ICC_V2_V4:
-        MP_VERBOSE(wl, "Compositor supports ICC creator requests.\n");
-        wl->supports_icc = true;
-        break;
     case WP_COLOR_MANAGER_V1_FEATURE_PARAMETRIC:
         MP_VERBOSE(wl, "Compositor supports parametric image description creator.\n");
         wl->supports_parametric = true;
-        break;
-    case WP_COLOR_MANAGER_V1_FEATURE_SET_PRIMARIES:
-        MP_VERBOSE(wl, "Compositor supports setting primaries.\n");
-        wl->supports_primaries = true;
-        break;
-    case WP_COLOR_MANAGER_V1_FEATURE_SET_TF_POWER:
-        MP_VERBOSE(wl, "Compositor supports setting transfer functions.\n");
-        wl->supports_tf_power = true;
-        break;
-    case WP_COLOR_MANAGER_V1_FEATURE_SET_LUMINANCES:
-        MP_VERBOSE(wl, "Compositor supports setting luminances.\n");
-        wl->supports_luminances = true;
         break;
     case WP_COLOR_MANAGER_V1_FEATURE_SET_MASTERING_DISPLAY_PRIMARIES:
         MP_VERBOSE(wl, "Compositor supports setting mastering display primaries.\n");
@@ -2156,7 +2145,7 @@ static void info_done(void *data, struct wp_image_description_info_v1 *image_des
     struct vo_wayland_preferred_description_info *wd = data;
     struct vo_wayland_state *wl = wd->wl;
     wp_image_description_info_v1_destroy(image_description_info);
-    if (wd->is_parametric) {
+    if (!wd->icc_file) {
         wl->preferred_csp = wd->csp;
         MP_VERBOSE(wl, "Preferred surface feedback received:\n");
         log_color_space(wl->log, wd);
@@ -2165,16 +2154,12 @@ static void info_done(void *data, struct wp_image_description_info_v1 *image_des
             wl->preferred_csp.transfer = PL_COLOR_TRC_PQ;
         }
     } else {
-        if (wd->icc_file) {
-            if (wl->icc_size) {
-                munmap(wl->icc_file, wl->icc_size);
-            }
-            wl->icc_file = wd->icc_file;
-            wl->icc_size = wd->icc_size;
-            wl->pending_vo_events |= VO_EVENT_ICC_PROFILE_CHANGED;
-        } else {
-            MP_VERBOSE(wl, "No ICC profile retrieved from the compositor.\n");
+        if (wl->icc_size) {
+            munmap(wl->icc_file, wl->icc_size);
         }
+        wl->icc_file = wd->icc_file;
+        wl->icc_size = wd->icc_size;
+        wl->pending_vo_events |= VO_EVENT_ICC_PROFILE_CHANGED;
     }
     talloc_free(wd);
 }
@@ -2183,9 +2168,6 @@ static void info_icc_file(void *data, struct wp_image_description_info_v1 *image
                           int32_t icc, uint32_t icc_size)
 {
     struct vo_wayland_preferred_description_info *wd = data;
-    if (wd->is_parametric)
-        return;
-
     void *icc_file = mmap(NULL, icc_size, PROT_READ, MAP_PRIVATE, icc, 0);
     close(icc);
 
@@ -2205,8 +2187,6 @@ static void info_primaries_named(void *data, struct wp_image_description_info_v1
                                  uint32_t primaries)
 {
     struct vo_wayland_preferred_description_info *wd = data;
-    if (!wd->is_parametric)
-        return;
     wd->csp.primaries = map_primaries(primaries);
 }
 
@@ -2219,8 +2199,6 @@ static void info_tf_named(void *data, struct wp_image_description_info_v1 *image
                           uint32_t tf)
 {
     struct vo_wayland_preferred_description_info *wd = data;
-    if (!wd->is_parametric)
-        return;
     wd->csp.transfer = map_tf(tf);
 }
 
@@ -2228,8 +2206,6 @@ static void info_luminances(void *data, struct wp_image_description_info_v1 *ima
                             uint32_t min_lum, uint32_t max_lum, uint32_t reference_lum)
 {
     struct vo_wayland_preferred_description_info *wd = data;
-    if (!wd->is_parametric)
-        return;
     wd->min_luma = min_lum / (float)WAYLAND_MIN_LUM_FACTOR;
     wd->max_luma = max_lum;
     wd->ref_luma = reference_lum;
@@ -2240,8 +2216,6 @@ static void info_target_primaries(void *data, struct wp_image_description_info_v
                                   int32_t w_x, int32_t w_y)
 {
     struct vo_wayland_preferred_description_info *wd = data;
-    if (!wd->is_parametric)
-        return;
     wd->csp.hdr.prim.red.x = (float)r_x / WAYLAND_COLOR_FACTOR;
     wd->csp.hdr.prim.red.y = (float)r_y / WAYLAND_COLOR_FACTOR;
     wd->csp.hdr.prim.green.x = (float)g_x / WAYLAND_COLOR_FACTOR;
@@ -2256,8 +2230,6 @@ static void info_target_luminance(void *data, struct wp_image_description_info_v
                                   uint32_t min_lum, uint32_t max_lum)
 {
     struct vo_wayland_preferred_description_info *wd = data;
-    if (!wd->is_parametric)
-        return;
     wd->csp.hdr.min_luma = (float)min_lum / WAYLAND_MIN_LUM_FACTOR;
     wd->csp.hdr.max_luma = (float)max_lum;
 }
@@ -2266,8 +2238,6 @@ static void info_target_max_cll(void *data, struct wp_image_description_info_v1 
                                 uint32_t max_cll)
 {
     struct vo_wayland_preferred_description_info *wd = data;
-    if (!wd->is_parametric)
-        return;
     wd->csp.hdr.max_cll = (float)max_cll;
 }
 
@@ -2275,8 +2245,6 @@ static void info_target_max_fall(void *data, struct wp_image_description_info_v1
                                  uint32_t max_fall)
 {
     struct vo_wayland_preferred_description_info *wd = data;
-    if (!wd->is_parametric)
-        return;
     wd->csp.hdr.max_fall = (float)max_fall;
 }
 
@@ -2298,10 +2266,7 @@ static void preferred_changed(void *data, struct wp_color_management_surface_fee
                               uint32_t identity)
 {
     struct vo_wayland_state *wl = data;
-    if (wl->supports_icc)
-        get_compositor_preferred_description(wl, false);
-    if (wl->supports_parametric)
-        get_compositor_preferred_description(wl, true);
+    get_compositor_preferred_description(wl);
 }
 
 static const struct wp_color_management_surface_feedback_v1_listener surface_feedback_listener = {
@@ -3104,19 +3069,17 @@ static int get_mods(struct vo_wayland_seat *s)
     return modifiers;
 }
 
-static void get_compositor_preferred_description(struct vo_wayland_state *wl, bool parametric)
+static void get_compositor_preferred_description(struct vo_wayland_state *wl)
 {
 #if HAVE_WAYLAND_PROTOCOLS_1_41
+    if (!wl->color_surface_feedback)
+        return;
+
     struct vo_wayland_preferred_description_info *wd = talloc_zero(NULL, struct vo_wayland_preferred_description_info);
     wd->wl = wl;
-    wd->is_parametric = parametric;
 
-    struct wp_image_description_v1 *image_description;
-    if (parametric) {
-        image_description = wp_color_management_surface_feedback_v1_get_preferred_parametric(wl->color_surface_feedback);
-    } else {
-        image_description = wp_color_management_surface_feedback_v1_get_preferred(wl->color_surface_feedback);
-    }
+    struct wp_image_description_v1 *image_description =
+        wp_color_management_surface_feedback_v1_get_preferred(wl->color_surface_feedback);
     struct wp_image_description_info_v1 *description_info =
         wp_image_description_v1_get_information(image_description);
     wp_image_description_info_v1_add_listener(description_info, &image_description_info_listener, wd);
@@ -3485,7 +3448,7 @@ static void seat_create_text_input(struct vo_wayland_seat *seat)
 static void set_color_management(struct vo_wayland_state *wl)
 {
 #if HAVE_WAYLAND_PROTOCOLS_1_41
-    if (!wl->color_surface)
+    if (!wl->color_surface || !wl->supports_parametric)
         return;
 
     struct pl_color_space color = wl->target_params.color;
@@ -3569,7 +3532,9 @@ static void set_color_representation(struct vo_wayland_state *wl)
     enum mp_imgfmt imgfmt = wl->target_params.hw_subfmt ? wl->target_params.hw_subfmt : wl->target_params.imgfmt;
     bool is_420_subsampled = mp_imgfmt_is_420_subsampled(imgfmt);
 
-    MP_VERBOSE(wl, "Setting color representation:\n");
+    if ((coefficients && range) || alpha || (is_420_subsampled && chroma_location))
+        MP_VERBOSE(wl, "Setting color representation:\n");
+
     if (coefficients && range) {
         MP_VERBOSE(wl, "  Coefficients: %s, Range: %s\n",
                    m_opt_choice_str(pl_csp_names, repr.sys),
@@ -4084,8 +4049,6 @@ int vo_wayland_control(struct vo *vo, int *events, int request, void *arg)
         return VO_TRUE;
     }
     case VOCTRL_GET_ICC_PROFILE: {
-        if (!wl->supports_icc)
-            MP_WARN(wl, "Compositor does not support ICC profiles!\n");
         if (!wl->icc_file)
             return VO_FALSE;
         MP_VERBOSE(wl, "Retrieving ICC profile from compositor.\n");
@@ -4318,11 +4281,19 @@ bool vo_wayland_init(struct vo *vo)
     }
 
 #if HAVE_WAYLAND_PROTOCOLS_1_41
-    if (!wl->color_manager) {
+    if (wl->color_manager) {
+        wl->color_surface_feedback = wp_color_manager_v1_get_surface_feedback(wl->color_manager, wl->callback_surface);
+        wp_color_management_surface_feedback_v1_add_listener(wl->color_surface_feedback, &surface_feedback_listener, wl);
+        // Only bind color surface to vo_dmabuf_wayland for now to avoid conflicting with graphics drivers
+        if (!strcmp(wl->vo->driver->name, "dmabuf-wayland"))
+            wl->color_surface = wp_color_manager_v1_get_surface(wl->color_manager, wl->callback_surface);
+    } else {
         MP_VERBOSE(wl, "Compositor doesn't support the %s protocol!\n",
                    wp_color_manager_v1_interface.name);
     }
 #endif
+
+    get_compositor_preferred_description(wl);
 
 #if HAVE_WAYLAND_PROTOCOLS_1_44
     if (!wl->color_representation_manager) {
@@ -4435,33 +4406,6 @@ bool vo_wayland_init(struct vo *vo)
     /* Do another roundtrip to ensure all of the above is initialized
      * before mpv does anything else. */
     wl_display_roundtrip(wl->display);
-
-#if HAVE_WAYLAND_PROTOCOLS_1_41
-    // Only bind color surface to vo_dmabuf_wayland for now to avoid conflicting with graphics drivers
-    if (wl->color_manager && wl->supports_parametric && !strcmp(wl->vo->driver->name, "dmabuf-wayland"))
-        wl->color_surface = wp_color_manager_v1_get_surface(wl->color_manager, wl->callback_surface);
-
-    if (wl->color_manager && (wl->supports_parametric || wl->supports_icc)) {
-        wl->color_surface_feedback = wp_color_manager_v1_get_surface_feedback(wl->color_manager, wl->callback_surface);
-        wp_color_management_surface_feedback_v1_add_listener(wl->color_surface_feedback, &surface_feedback_listener, wl);
-    }
-#endif
-
-    if (wl->supports_parametric)
-        get_compositor_preferred_description(wl, true);
-    else
-        MP_VERBOSE(wl, "Compositor does not support parametric image descriptions!\n");
-
-
-    struct gl_video_opts *gl_opts = mp_get_config_group(NULL, vo->global, &gl_video_conf);
-    if (wl->supports_icc) {
-        // dumb workaround for avoiding -Wunused-function
-        get_compositor_preferred_description(wl, false);
-    } else {
-        int msg_level = gl_opts->icc_opts->profile_auto ? MSGL_WARN : MSGL_V;
-        mp_msg(wl->log, msg_level, "Compositor does not support ICC profiles!\n");
-    }
-    talloc_free(gl_opts);
 
     return true;
 

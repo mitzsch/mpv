@@ -1834,7 +1834,7 @@ Video
     You can get the list of allowed codecs with ``mpv --vd=help``. Remove the
     prefix, e.g. instead of ``lavc:h264`` use ``h264``.
 
-    By default, this is set to ``h264,vc1,hevc,vp8,vp9,av1,prores,prores_raw,ffv1``. Note that
+    By default, this is set to ``h264,vc1,hevc,vp8,vp9,av1,prores,prores_raw,ffv1,dpx``. Note that
     the hardware acceleration special codecs like ``h264_vdpau`` are not
     relevant anymore, and in fact have been removed from FFmpeg in this form.
 
@@ -2386,6 +2386,14 @@ Audio
     The application name the player reports to the audio API. Can be useful
     if you want to force a different audio profile (e.g. with PulseAudio),
     or to set your own application name when using libmpv.
+
+``--audio-set-media-role=<yes|no>``
+    If enabled, mpv will set the appropriate media role on supported audio
+    servers to indicate whether mpv is playing a video or an audio-only file.
+    This is disabled by default since per media role volumes have often caused
+    unexpected and confusing behavior.
+
+    Default: no.
 
 ``--audio-buffer=<seconds>``
     Set the audio output minimum buffer. The audio device might actually create

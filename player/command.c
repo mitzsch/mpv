@@ -7438,7 +7438,7 @@ const struct mp_cmd_def mp_cmds[] = {
     { "playlist-clear", cmd_playlist_clear },
     { "playlist-remove", cmd_playlist_remove, {
         {"index", OPT_CHOICE(v.i, {"current", -1}),
-            .flags = MP_CMD_OPT_ARG, M_RANGE(0, INT_MAX)}, }},
+            M_RANGE(0, INT_MAX)}, }},
     { "playlist-move", cmd_playlist_move,  { {"index1", OPT_INT(v.i)},
                                              {"index2", OPT_INT(v.i)}, }},
     { "run", cmd_run, { {"command", OPT_STRING(v.s)},
@@ -8027,7 +8027,8 @@ void mp_option_run_callback(struct MPContext *mpctx, struct mp_option_callback *
         run_command_opts(mpctx);
     }
 
-    if (opt_ptr == &opts->playback_speed || opt_ptr == &opts->playback_pitch) {
+    if (opt_ptr == &opts->playback_speed || opt_ptr == &opts->playback_pitch ||
+        opt_ptr == &opts->pitch_correction) {
         update_playback_speed(mpctx);
         mp_wakeup_core(mpctx);
     }
