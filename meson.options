@@ -29,6 +29,7 @@ option('lua',
 option('pthread-debug', type: 'feature', value: 'disabled', description: 'pthread runtime debugging wrappers')
 option('rubberband', type: 'feature', value: 'auto', description: 'librubberband support')
 option('sdl2-gamepad', type: 'feature', value: 'disabled', description: 'SDL2 gamepad input')
+option('subrandr', type: 'feature', value: 'auto', description: 'subrandr support (SRV3 and WebVTT subtitle renderer)')
 option('uchardet', type: 'feature', value: 'auto', description: 'uchardet support')
 option('uwp', type: 'feature', value: 'disabled', description: 'Universal Windows Platform')
 option('vapoursynth', type: 'feature', value: 'auto', description: 'VapourSynth filter bridge')
@@ -56,6 +57,7 @@ option('sndio', type: 'feature', value: 'auto', description: 'sndio audio output
 option('wasapi', type: 'feature', value: 'auto', description: 'WASAPI audio output')
 
 # video output features
+option('amf', type: 'feature', value: 'auto', description: 'AMD AMF')
 option('caca', type: 'feature', value: 'auto', description: 'CACA')
 option('cocoa', type: 'feature', value: 'auto', description: 'Cocoa')
 option('d3d11', type: 'feature', value: 'auto', description: 'Direct3D 11 video output')
