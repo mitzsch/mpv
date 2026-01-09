@@ -48,8 +48,6 @@ local opts = {
     case_sensitive = false,
     history_dedup = true,
     font_hw_ratio = "auto",
-    selected_color = "",
-    selected_back_color = "",
 }
 
 local styles = {
@@ -91,7 +89,9 @@ local searching_history = false
 local history_paths = {}
 local histories_to_save = {}
 
+local MAX_LOG_LINES = 10000
 local log_buffers = {}
+local log_offset = 0
 local key_bindings = {}
 local dont_bind_up_down = false
 local global_margins = { t = 0, b = 0 }
@@ -114,6 +114,7 @@ local first_match_to_print = 1
 local default_item
 local item_positions = {}
 local max_item_width = 0
+local horizontal_offset = 0
 
 local complete
 local cycle_through_completions
@@ -543,6 +544,11 @@ local function get_matches_to_print(terminal)
     local last_match_to_print  = math.min(first_match_to_print + max_lines - 1,
                                           #matches)
 
+    if last_match_to_print - first_match_to_print + 1 < math.min(max_lines, #matches) and
+       last_match_to_print >= math.min(max_lines, #matches) then
+        first_match_to_print = last_match_to_print - math.min(max_lines, #matches) + 1
+    end
+
     for i = first_match_to_print, last_match_to_print do
         local item = ""
         local end_highlight = terminal and terminal_styles.match_end or "{\\1c}"
@@ -711,7 +717,7 @@ local function render()
             (global_margins.t + (1 - global_margins.t - global_margins.b) / 2) -
             (math.min(#selectable_items, max_lines) + 1.5) * line_height / 2
         alignment = 7
-        clipping_coordinates = "0,0," .. x + max_item_width .. "," .. osd_h
+        clipping_coordinates = x .. ",0," .. x + max_item_width .. "," .. osd_h
     else
         x = get_margin_x()
         y = osd_h * (1 - global_margins.b) - get_margin_y()
@@ -754,7 +760,9 @@ local function render()
 
     local log_ass = ""
     local log_buffer = log_buffers[id] or {}
-    for i = #log_buffer - math.min(max_lines, #log_buffer) + 1, #log_buffer do
+    log_offset = math.max(math.min(log_offset, #log_buffer - max_lines), 0)
+    for i = #log_buffer - math.min(max_lines, #log_buffer) - log_offset + 1,
+            #log_buffer - log_offset do
         log_ass = log_ass .. style .. log_buffer[i].style ..
                   ass_escape(log_buffer[i].text) .. "\\N"
     end
@@ -830,7 +838,7 @@ local function render()
 
         ass:new_event()
         ass:an(4)
-        ass:pos(x, item_y)
+        ass:pos(x - horizontal_offset, item_y)
         ass:append(style .. item)
 
         item_positions[#item_positions + 1] =
@@ -1204,6 +1212,11 @@ local function move_history(amount, is_wheel)
     render()
 end
 
+local function horizontal_scroll(amount)
+    horizontal_offset = math.max(horizontal_offset + amount, 0)
+    render()
+end
+
 -- Go to the first command in the command history (PgUp)
 local function handle_pgup()
     if selectable_items then
@@ -1233,6 +1246,7 @@ local function search_history()
 
     searching_history = true
     selectable_items = {}
+    horizontal_offset = 0
 
     for i = 1, #history do
         selectable_items[i] = history[#history + 1 - i]
@@ -1329,6 +1343,15 @@ local function clear_log_buffer()
     if not selectable_items then
         log_buffers[id] = {}
     end
+    render()
+end
+
+local function scroll_log(amount)
+    if selectable_items then
+        return
+    end
+
+    log_offset = log_offset + amount
     render()
 end
 
@@ -1492,8 +1515,16 @@ local function get_bindings()
         { "down",        function() move_history(1) end         },
         { "ctrl+n",      function() move_history(1) end         },
         { "wheel_down",  function() move_history(1, true) end   },
+        { "shift+up",    function() scroll_log(1)  end          },
+        { "shift+down",  function() scroll_log(-1) end          },
         { "wheel_left",  function() end                         },
         { "wheel_right", function() end                         },
+        { "shift+left",  function() horizontal_scroll(-25) end  },
+        { "shift+right", function() horizontal_scroll( 25) end  },
+        { "wheel_left",  function() horizontal_scroll(-25) end  },
+        { "wheel_right", function() horizontal_scroll( 25) end  },
+        { "shift+wheel_up",   function() horizontal_scroll(-25) end },
+        { "shift+wheel_down", function() horizontal_scroll( 25) end },
         { "ctrl+left",   prev_word                              },
         { "alt+b",       prev_word                              },
         { "ctrl+right",  next_word                              },
@@ -1650,6 +1681,7 @@ mp.register_script_message("get-input", function (script_name, args)
 
     if args.items then
         selectable_items = {}
+        horizontal_offset = 0
 
         -- Limit the number of characters to prevent libass from freezing mpv.
         -- Not important for terminal output.
@@ -1661,7 +1693,9 @@ mp.register_script_message("get-input", function (script_name, args)
         end
 
         for i, item in ipairs(args.items) do
-            selectable_items[i] = item:gsub("[\r\n].*", "⋯"):sub(1, limit)
+            local last = next_utf8(item, limit) - 1
+            selectable_items[i] = item:gsub("[\r\n].*", "…"):sub(1, last) ..
+                                  (last < #item and "…" or "")
         end
 
         calculate_max_item_width()
@@ -1671,6 +1705,7 @@ mp.register_script_message("get-input", function (script_name, args)
         selectable_items = nil
         unbind_mouse()
         id = args.id or script_name .. prompt
+        log_offset = 0
         completion_buffer = {}
         autoselect_completion = args.autoselect_completion
 
@@ -1693,7 +1728,7 @@ mp.register_script_message("get-input", function (script_name, args)
     mp.commandv("script-message-to", input_caller, "input-event", "opened")
 end)
 
--- Add a line to the log buffer (which is limited to 100 lines)
+-- Add a line to the log buffer
 mp.register_script_message("log", function (message)
     local log_buffer = log_buffers[id]
     message = utils.parse_json(message)
@@ -1705,12 +1740,16 @@ mp.register_script_message("log", function (message)
                          message.terminal_style or "",
     }
 
-    if #log_buffer > 100 then
+    if #log_buffer > MAX_LOG_LINES then
         table.remove(log_buffer, 1)
     end
 
     if not open then
         return
+    end
+
+    if log_offset > 0 then
+        log_offset = log_offset + 1
     end
 
     if not update_timer:is_enabled() then
@@ -1820,15 +1859,5 @@ mp.register_script_message("type", function (...)
 end)
 
 require "mp.options".read_options(opts, nil, render)
-
-if opts.selected_color ~= "" then
-    opts.focused_color = opts.selected_color
-    mp.msg.warn("selected_color has been replaced by focused_color")
-end
-
-if opts.selected_back_color ~= "" then
-    opts.focused_back_color = opts.selected_back_color
-    mp.msg.warn("selected_back_color has been replaced by focused_back_color")
-end
 
 collectgarbage()
