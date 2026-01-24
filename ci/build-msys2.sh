@@ -8,9 +8,16 @@ args=(
   -D{egl-angle-lib,egl-angle-win32,pdf-build,rubberband,win32-smtc}=enabled
 )
 
-if [[ "$SYS" == "clang64" ]]; then
+if [[ -n "$ASAN" ]]; then
     args+=(
       -Db_sanitize=address,undefined
+    )
+fi
+
+if [[ -n "$AUTO_VAR_INIT" ]]; then
+    args+=(
+        -Dc_args="-ftrivial-auto-var-init=$AUTO_VAR_INIT"
+        -Dcpp_args="-ftrivial-auto-var-init=$AUTO_VAR_INIT"
     )
 fi
 
@@ -18,10 +25,6 @@ echo "::group::Building subrandr"
 build_subrandr "/$SYS"
 echo "::endgroup::"
 args+=(-Dsubrandr=enabled)
-
-[[ "$SYS" == "clangarm64" ]] && args+=(
-  -Dpdf-build=disabled
-)
 
 meson setup build $common_args "${args[@]}"
 meson compile -C build

@@ -29,6 +29,10 @@ on:
       - 'README.md'
       - 'RELEASE_NOTES'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   mingw:
     runs-on: ubuntu-24.04
@@ -291,9 +295,11 @@ jobs:
           else
             brew update
           fi
+          if brew list ffmpeg &> /dev/null; then brew unlink ffmpeg; fi
           brew install -q autoconf automake pkgconf libtool python freetype fribidi little-cms2 \
-            luajit libass ffmpeg meson rust uchardet mujs libplacebo molten-vk vulkan-loader vulkan-headers \
+            luajit libass ffmpeg-full meson rust uchardet mujs libplacebo molten-vk vulkan-loader vulkan-headers \
             libarchive libbluray libcaca libcdio-paranoia libdvdnav rubberband zimg
+          brew link ffmpeg-full
 
       - name: Build with meson
         id: build
@@ -568,6 +574,16 @@ jobs:
         include:
           - sys: "clang64"
             os: "windows-latest"
+            auto-var-init: "uninitialized"
+          - sys: "clang64"
+            os: "windows-latest"
+            asan: true
+          - sys: "clang64"
+            os: "windows-latest"
+            auto-var-init: "zero"
+          - sys: "clang64"
+            os: "windows-latest"
+            auto-var-init: "pattern"
           - sys: "mingw64"
             os: "windows-latest"
           - sys: "ucrt64"
@@ -623,6 +639,8 @@ jobs:
           ./ci/build-msys2.sh meson
         env:
           SYS: ${{ matrix.sys }}
+          ASAN: ${{ matrix.asan }}
+          AUTO_VAR_INIT: ${{ matrix.auto-var-init }}
 
       - name: Print meson log
         if: ${{ failure() && steps.build.outcome == 'failure' }}

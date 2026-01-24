@@ -138,6 +138,7 @@ struct vo_internal {
     bool send_reset;                // send VOCTRL_RESET
     bool paused;
     bool visible;
+    bool wait_on_vo;
     bool wakeup_on_done;
     int queued_events;              // event mask for the user
     int internal_events;            // event mask for us
@@ -836,7 +837,7 @@ bool vo_is_ready_for_frame(struct vo *vo, int64_t next_pts)
 {
     struct vo_internal *in = vo->in;
     mp_mutex_lock(&in->lock);
-    bool r = vo->config_ok && !in->frame_queued &&
+    bool r = vo->config_ok && !in->wait_on_vo && !in->frame_queued &&
              (!in->current_frame || in->current_frame->num_vsyncs < 1);
     if (r && next_pts >= 0) {
         // Don't show the frame too early - it would basically freeze the
@@ -895,6 +896,14 @@ void vo_wait_frame(struct vo *vo)
     mp_mutex_lock(&in->lock);
     while (in->frame_queued || in->rendering)
         mp_cond_wait(&in->wakeup, &in->lock);
+    mp_mutex_unlock(&in->lock);
+}
+
+void vo_wait_on_vo(struct vo *vo, bool wait)
+{
+    struct vo_internal *in = vo->in;
+    mp_mutex_lock(&in->lock);
+    in->wait_on_vo = wait;
     mp_mutex_unlock(&in->lock);
 }
 
@@ -1157,7 +1166,7 @@ static MP_THREAD_VOID vo_thread(void *ptr)
                 wakeup_core(vo);
             }
         }
-        if (vo->want_redraw && !in->want_redraw) {
+        if (vo->want_redraw) {
             in->want_redraw = true;
             wakeup_core(vo);
         }
@@ -1190,7 +1199,6 @@ static MP_THREAD_VOID vo_thread(void *ptr)
                 do_redraw(vo); // now is a good time
                 vo->previous_redraw_time = now;
             } else {
-                in->request_redraw = true;
                 wait_vo(vo, now + max_interval);
             }
             continue;

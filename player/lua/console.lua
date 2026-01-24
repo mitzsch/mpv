@@ -96,6 +96,7 @@ local key_bindings = {}
 local dont_bind_up_down = false
 local global_margins = { t = 0, b = 0 }
 local input_caller
+local input_caller_handler
 local keep_open = false
 
 local completion_buffer = {}
@@ -949,7 +950,7 @@ end
 local function handle_edit()
     if not selectable_items then
         handle_cursor_move()
-        mp.commandv("script-message-to", input_caller, "input-event", "edited",
+        mp.commandv("script-message-to", input_caller, input_caller_handler, "edited",
                     utils.format_json({line}))
         return
     end
@@ -1070,7 +1071,7 @@ local function submit()
 
     if selectable_items then
         if #matches > 0 then
-            mp.commandv("script-message-to", input_caller, "input-event", "submit",
+            mp.commandv("script-message-to", input_caller, input_caller_handler, "submit",
                         utils.format_json({matches[focused_match].index}))
         end
     else
@@ -1079,7 +1080,7 @@ local function submit()
             cycle_through_completions()
         end
 
-        mp.commandv("script-message-to", input_caller, "input-event", "submit",
+        mp.commandv("script-message-to", input_caller, input_caller_handler, "submit",
                     utils.format_json({line}))
 
         history_add(line)
@@ -1481,7 +1482,7 @@ end
 complete = function ()
     completion_old_line = line
     completion_old_cursor = cursor
-    mp.commandv("script-message-to", input_caller, "input-event",
+    mp.commandv("script-message-to", input_caller, input_caller_handler,
                 "complete", utils.format_json({line:sub(1, cursor - 1)}))
     render()
 end
@@ -1651,25 +1652,30 @@ set_active = function (active)
         unbind_mouse()
         mp.set_property_bool("user-data/mpv/console/open", false)
         mp.set_property_bool("input-ime", ime_active)
-        mp.commandv("script-message-to", input_caller, "input-event",
+        mp.commandv("script-message-to", input_caller, input_caller_handler,
                     "closed", utils.format_json({line, cursor}))
         collectgarbage()
     end
     render()
 end
 
-mp.register_script_message("disable", function()
-    set_active(false)
+mp.register_script_message("disable", function(message)
+    message = utils.parse_json(message or "")
+
+    if not message or message.client_name == input_caller then
+        set_active(false)
+    end
 end)
 
-mp.register_script_message("get-input", function (script_name, args)
-    if open and script_name ~= input_caller then
-        mp.commandv("script-message-to", input_caller, "input-event",
+mp.register_script_message("get-input", function (args)
+    if open then
+        mp.commandv("script-message-to", input_caller, input_caller_handler,
                     "closed", utils.format_json({line, cursor}))
     end
 
-    input_caller = script_name
     args = utils.parse_json(args)
+    input_caller = args.client_name
+    input_caller_handler = args.handler_id
     prompt = args.prompt or ""
     line = args.default_text or ""
     cursor = tonumber(args.cursor_position) or line:len() + 1
@@ -1704,7 +1710,7 @@ mp.register_script_message("get-input", function (script_name, args)
     else
         selectable_items = nil
         unbind_mouse()
-        id = args.id or script_name .. prompt
+        id = args.id
         log_offset = 0
         completion_buffer = {}
         autoselect_completion = args.autoselect_completion
@@ -1721,17 +1727,26 @@ mp.register_script_message("get-input", function (script_name, args)
 
         if line ~= "" then
             complete()
+        elseif open then
+            -- This is needed to update the prompt if a new request is
+            -- received while another is still active.
+            render()
         end
     end
 
     set_active(true)
-    mp.commandv("script-message-to", input_caller, "input-event", "opened")
+    mp.commandv("script-message-to", input_caller, input_caller_handler, "opened")
 end)
 
 -- Add a line to the log buffer
 mp.register_script_message("log", function (message)
-    local log_buffer = log_buffers[id]
-    message = utils.parse_json(message)
+    message = utils.parse_json(message or "")
+    if not message or not message.log_id then
+        return
+    end
+
+    local log_buffer = log_buffers[message.log_id]
+    if not log_buffer then return end
 
     log_buffer[#log_buffer + 1] = {
         text = message.text,
@@ -1744,7 +1759,7 @@ mp.register_script_message("log", function (message)
         table.remove(log_buffer, 1)
     end
 
-    if not open then
+    if not open or message.log_id ~= id then
         return
     end
 
@@ -1760,9 +1775,13 @@ mp.register_script_message("log", function (message)
     end
 end)
 
-mp.register_script_message("set-log", function (log)
+mp.register_script_message("set-log", function (log_id, log)
+    if not log_id or not log then
+        return
+    end
+
     log = utils.parse_json(log)
-    log_buffers[id] = {}
+    log_buffers[log_id] = {}
 
     for i = 1, #log do
         if type(log[i]) == "table" then
@@ -1779,20 +1798,25 @@ mp.register_script_message("set-log", function (log)
         end
     end
 
-    render()
+    if log_id == id then
+        render()
+    end
 end)
 
-mp.register_script_message("complete", function (list, start_pos, append)
-    if line ~= completion_old_line or cursor ~= completion_old_cursor then
+mp.register_script_message("complete", function (message)
+    message = utils.parse_json(message)
+
+    if message.client_name ~= input_caller or message.handler_id ~= input_caller_handler
+       or line ~= completion_old_line or cursor ~= completion_old_cursor then
         return
     end
 
     completion_buffer = {}
     selected_completion_index = 0
-    local completions = utils.parse_json(list)
+    local completions = message.list
     table.sort(completions)
-    completion_pos = start_pos
-    completion_append = append
+    completion_pos = message.start_pos
+    completion_append = message.append
     for i, match in ipairs(fuzzy_find(line:sub(completion_pos, cursor - 1),
                                       completions)) do
         completion_buffer[i] = completions[match[1]]

@@ -929,7 +929,12 @@ REPL.
         the text in the console.
 
     ``keep_open``
-        Whether to keep the console open on submit. Defaults to ``false``.
+        Whether to keep the console open on submit, allowing further input.
+        Defaults to ``false``.
+
+        If calling ``input.get()`` or ``input.select()`` again from inside the
+        ``submit`` callback, setting this option to ``true`` allows a seamless
+        transition without the console closing and reopening.
 
     ``opened``
         A callback invoked when the console is shown. This can be used to
@@ -976,19 +981,22 @@ REPL.
         script name with ``prompt`` appended.
 
 ``input.terminate()``
-    Close the console.
+    Closes any currently active input request. This will not close
+    requests made by other scripts.
 
 ``input.log(message, style, terminal_style)``
-    Add a line to the log buffer. ``style`` can contain additional ASS tags to
-    apply to ``message``, and ``terminal_style`` can contain escape sequences
-    that are used when the console is displayed in the terminal.
+    Add a line to the log buffer of the latest ``input.get()`` request.
+    ``style`` can contain additional ASS tags to apply to ``message``,
+    and ``terminal_style`` can contain escape sequences that are used
+    when the console is displayed in the terminal.
 
 ``input.log_error(message)``
-    Helper to add a line to the log buffer with the same color as the one used
+    Helper to add an error line to the log buffer of the latest ``input.get()``
+    request. The line is styled with the same color as the one used
     for commands that error. Useful when the user submits invalid input.
 
 ``input.set_log(log)``
-    Replace the entire log buffer.
+    Replace the entire log buffer of the latest ``input.get()`` request.
 
     ``log`` is a table of strings, or tables with ``text``, ``style`` and
     ``terminal_style`` keys.
@@ -1025,7 +1033,12 @@ REPL.
         the 1-based index of the selected item.
 
     ``keep_open``
-        Whether to keep the console open on submit. Defaults to ``false``.
+        Whether to keep the console open on submit, allowing further input.
+        Defaults to ``false``.
+
+        If calling ``input.get()`` or ``input.select()`` again from inside the
+        ``submit`` callback, setting this option to ``true`` allows a seamless
+        transition without the console closing and reopening.
 
     Example:
 

@@ -43,16 +43,13 @@ mp.add_key_binding(nil, "select-playlist", function ()
     local playlist = {}
     local default_item
     local show = mp.get_property_native("osd-playlist-entry")
-    local trailing_slash_pattern = mp.get_property("platform") == "windows"
-                                   and "[/\\]+$" or "/+$"
 
     for i, entry in ipairs(mp.get_property_native("playlist")) do
         playlist[i] = entry.title
         if not playlist[i] or show ~= "title" then
             playlist[i] = entry.filename
             if not playlist[i]:find("://") then
-                playlist[i] = select(2, utils.split_path(
-                    playlist[i]:gsub(trailing_slash_pattern, "")))
+                playlist[i] = select(2, utils.split_path(playlist[i]))
             end
         end
         if entry.title and show == "both" then
@@ -682,6 +679,10 @@ mp.add_key_binding(nil, "open-docs", function ()
     system_open("https://mpv.io/manual/")
 end)
 
+mp.add_key_binding(nil, "open-chat", function ()
+    system_open("https://web.libera.chat/#mpv")
+end)
+
 mp.add_key_binding(nil, "menu", function ()
     local sub_track_count = 0
     local audio_track_count = 0
@@ -727,6 +728,7 @@ mp.add_key_binding(nil, "menu", function ()
         {"Edit key bindings", "script-binding select/edit-input-conf", true},
         {"Help", "script-binding stats/display-page-4-toggle", true},
         {"Online documentation", "script-binding select/open-docs", true},
+        {"Support", "script-binding select/open-chat", true},
     }
 
     local labels = {}

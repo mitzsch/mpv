@@ -76,10 +76,16 @@ class MetalLayer: CAMetalLayer {
         }
     }
 
+    // workaround for MoltenVK problem setting this to false even when no transparent content is rendered
+    var wantsAlpha: Bool = false { didSet { isOpaque = !wantsAlpha } }
     override var isOpaque: Bool {
-       didSet {
-            if isOpaque != oldValue {
-                log.verbose("Metal layer is opaque (direct-to-display possible): \(isOpaque)")
+        get { return super.isOpaque }
+        set {
+            let isForced = newValue == wantsAlpha
+            if isOpaque == wantsAlpha || isForced {
+                super.isOpaque = !wantsAlpha
+                backgroundColor = (wantsAlpha ? NSColor.clear : NSColor.black).cgColor
+                log.verbose("Metal layer is opaque (direct-to-display possible): \(isOpaque)" + (isForced ? " (forced)" : ""))
             }
         }
     }

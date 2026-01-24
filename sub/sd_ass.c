@@ -38,6 +38,7 @@
 #include "video/mp_image.h"
 #include "dec_sub.h"
 #include "ass_mp.h"
+#include "packer.h"
 #include "sd.h"
 
 struct sd_ass_priv {
@@ -51,7 +52,7 @@ struct sd_ass_priv {
     struct sd_filter **filters;
     int num_filters;
     bool clear_once;
-    struct mp_ass_packer *packer;
+    struct mp_sub_packer *packer;
     struct sub_bitmap_copy_cache *copy_cache;
     bstr last_text;
     struct mp_image_params video_params;
@@ -319,7 +320,7 @@ static int init(struct sd *sd)
     assobjects_init(sd);
     filters_init(sd);
 
-    ctx->packer = mp_ass_packer_alloc(ctx);
+    ctx->packer = mp_sub_packer_alloc(ctx);
 
     // Subtitles does not have any profile value, so put the converted type as a profile.
     const char *_Atomic *desc = ctx->converter ? &sd->codec->codec_profile : &sd->codec->codec_desc;
@@ -778,7 +779,7 @@ static struct sub_bitmaps *get_bitmaps(struct sd *sd, struct mp_osd_res dim,
 
     int changed;
     ASS_Image *imgs = ass_render_frame(renderer, track, ts, &changed);
-    mp_ass_packer_pack(ctx->packer, &imgs, 1, changed, !converted, format, res);
+    mp_sub_packer_pack_ass(ctx->packer, &imgs, 1, changed, !converted, format, res);
 
 done:
     // mangle_colors() modifies the color field, so copy the thing _before_.
@@ -997,6 +998,7 @@ static void reset(struct sd *sd)
     if (sd->opts->sub_clear_on_seek || ctx->clear_once) {
         ass_flush_events(ctx->ass_track);
         ctx->num_seen_packets = 0;
+        ctx->num_packets_animated = 0;
         sd->preload_ok = false;
         ctx->clear_once = false;
     }
@@ -1031,6 +1033,10 @@ static int control(struct sd *sd, enum sd_ctrl cmd, void *arg)
     }
     case SD_CTRL_SET_ANIMATED_CHECK:
         ctx->check_animated = *(bool *)arg;
+        return CONTROL_OK;
+    case SD_CTRL_RESET_SOFT:
+        ctx->clear_once = true;
+        reset(sd);
         return CONTROL_OK;
     case SD_CTRL_SET_VIDEO_PARAMS:
         ctx->video_params = *(struct mp_image_params *)arg;

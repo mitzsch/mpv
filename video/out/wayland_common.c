@@ -2107,6 +2107,7 @@ static void image_description_failed(void *data, struct wp_image_description_v1 
     MP_VERBOSE(wl, "Image description failed: %d, %s\n", cause, msg);
     wp_color_management_surface_v1_unset_image_description(wl->color_surface);
     wp_image_description_v1_destroy(image_description);
+    wl->image_description_processed = true;
 }
 
 static void image_description_ready2(void *data, struct wp_image_description_v1 *image_description,
@@ -2117,6 +2118,7 @@ static void image_description_ready2(void *data, struct wp_image_description_v1 
                                                          WP_COLOR_MANAGER_V1_RENDER_INTENT_PERCEPTUAL);
     MP_TRACE(wl, "Image description set on color surface.\n");
     wp_image_description_v1_destroy(image_description);
+    wl->image_description_processed = true;
 }
 
 static void image_description_ready(void *data, struct wp_image_description_v1 *image_description,
@@ -2137,6 +2139,7 @@ static void info_done(void *data, struct wp_image_description_info_v1 *image_des
 {
     struct vo_wayland_preferred_description_info *wd = data;
     struct vo_wayland_state *wl = wd->wl;
+    wl->image_description_info_done = true;
     wp_image_description_info_v1_destroy(image_description_info);
     if (!wd->icc_file) {
         MP_VERBOSE(wl, "Preferred surface feedback received:\n");
@@ -2324,6 +2327,10 @@ static void supported_coefficients_and_ranges(void *data, struct wp_color_repres
     struct vo_wayland_state *wl = data;
     int offset = range == WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_FULL ? 0 : PL_COLOR_SYSTEM_COUNT;
     switch (coefficients) {
+    case WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_IDENTITY:
+        wl->coefficients_map[PL_COLOR_SYSTEM_RGB] = WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_IDENTITY;
+        wl->range_map[PL_COLOR_SYSTEM_RGB + offset] = range;
+        break;
     case WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT709:
         wl->coefficients_map[PL_COLOR_SYSTEM_BT_709] = WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT709;
         wl->range_map[PL_COLOR_SYSTEM_BT_709 + offset] = range;
@@ -3105,8 +3112,15 @@ static void get_compositor_preferred_description(struct vo_wayland_state *wl)
         wp_color_management_surface_feedback_v1_get_preferred(wl->color_surface_feedback);
     struct wp_image_description_info_v1 *description_info =
         wp_image_description_v1_get_information(image_description);
+    struct wl_event_queue *image_description_info_queue = wl_display_create_queue_with_name(wl->display, "image description info queue");
+    wl->image_description_info_done = false;
+    wl_proxy_set_queue((struct wl_proxy *)description_info, image_description_info_queue);
     wp_image_description_info_v1_add_listener(description_info, &image_description_info_listener, wd);
+    while (wl_display_dispatch_queue(wl->display, image_description_info_queue) > 0)
+        if (wl->image_description_info_done)
+            break;
     wp_image_description_v1_destroy(image_description);
+    wl_event_queue_destroy(image_description_info_queue);
 #endif
 }
 
@@ -3530,6 +3544,7 @@ static void set_color_management(struct vo_wayland_state *wl)
         wp_image_description_creator_params_v1_set_max_fall(image_creator_params, lrintf(hdr.max_fall));
     }
     struct wp_image_description_v1 *image_description = wp_image_description_creator_params_v1_create(image_creator_params);
+    wl->image_description_processed = false;
     wp_image_description_v1_add_listener(image_description, &image_description_listener, wl);
 #endif
 }
