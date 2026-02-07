@@ -4065,6 +4065,22 @@ static int mp_property_mdata(void *ctx, struct m_property *prop,
     return M_PROPERTY_NOT_IMPLEMENTED;
 }
 
+static int mp_property_default_menu(void *ctx, struct m_property *prop,
+                                    int action, void *arg)
+{
+    switch (action) {
+        case M_PROPERTY_GET:
+            *(char **)arg = talloc_strdup(NULL,
+#include "etc/menu.conf.inc"
+                );
+            return M_PROPERTY_OK;
+        case M_PROPERTY_GET_TYPE:
+            *(struct m_option *)arg = (struct m_option){.type = CONF_TYPE_STRING};
+            return M_PROPERTY_OK;
+    }
+    return M_PROPERTY_NOT_IMPLEMENTED;
+}
+
 static int do_list_udata(int item, int action, void *arg, void *ctx);
 
 struct udata_ctx {
@@ -4570,6 +4586,7 @@ static const struct m_property mp_properties_base[] = {
     {"input-bindings", mp_property_bindings},
 
     {"menu-data", mp_property_mdata},
+    {"default-menu", mp_property_default_menu},
 
     {"user-data", mp_property_udata},
     {"term-size", mp_property_term_size},
@@ -5871,8 +5888,8 @@ static void cmd_frame_step(void *p)
     if (flags == 1) {
         // frame-step command has on_updown set so it is called on both down
         // and up, but stepping should only be triggered when it matches the
-        // emit_on_up flag.
-        if (cmd->cmd->is_up == cmd->cmd->emit_on_up)
+        // emit_on_up flag or if the command is repeated.
+        if (cmd->cmd->repeated || cmd->cmd->is_up == cmd->cmd->emit_on_up)
             add_step_frame(mpctx, frames, true);
     } else {
         if (cmd->cmd->is_up) {

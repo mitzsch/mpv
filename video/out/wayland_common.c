@@ -3486,7 +3486,7 @@ static void set_color_management(struct vo_wayland_state *wl)
 {
 #if HAVE_WAYLAND_PROTOCOLS_1_41
     if (!wl->color_surface || !wl->supports_parametric)
-        return;
+        goto nosupport;
 
     struct pl_color_space color = wl->target_params.color;
     int primaries = wl->primaries_map[color.primaries];
@@ -3497,7 +3497,7 @@ static void set_color_management(struct vo_wayland_state *wl)
         MP_VERBOSE(wl, "Compositor does not support transfer function: %s\n", m_opt_choice_str(pl_csp_trc_names, color.transfer));
     if (!primaries || !transfer) {
         wp_color_management_surface_v1_unset_image_description(wl->color_surface);
-        return;
+        goto nosupport;
     }
 
     MP_VERBOSE(wl, "Generating image creator params:\n");
@@ -3546,6 +3546,11 @@ static void set_color_management(struct vo_wayland_state *wl)
     struct wp_image_description_v1 *image_description = wp_image_description_creator_params_v1_create(image_creator_params);
     wl->image_description_processed = false;
     wp_image_description_v1_add_listener(image_description, &image_description_listener, wl);
+    return;
+
+nosupport:
+    wl->image_description_processed = true;
+    return;
 #endif
 }
 
@@ -4199,7 +4204,6 @@ void vo_wayland_handle_color(struct vo_wayland_state *wl)
     if (!wl->vo->target_params)
         return;
     struct mp_image_params target_params = vo_get_target_params(wl->vo);
-    pl_color_space_infer(&target_params.color);
     if (pl_color_space_equal(&target_params.color, &wl->target_params.color) &&
         pl_color_repr_equal(&target_params.repr, &wl->target_params.repr) &&
         target_params.chroma_location == wl->target_params.chroma_location)
