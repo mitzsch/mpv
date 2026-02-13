@@ -1,7 +1,9 @@
 0bgr        = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrp, a=unknown, ca=unknown, ca_f=unknown
 0rgb        = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrp, a=unknown, ca=unknown, ca_f=unknown
 abgr        = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrap, a=unknown, ca=unknown, ca_f=unknown
+amf         = no
 argb        = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrap, a=unknown, ca=unknown, ca_f=unknown
+ayuv        = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuva444pf, a=unknown, ca=unknown, ca_f=unknown
 ayuv64      = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuva444pf, a=unknown, ca=unknown, ca_f=unknown
 ayuv64be    = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuva444pf, a=unknown, ca=unknown, ca_f=unknown
 bayer_bggr16= no
@@ -47,14 +49,22 @@ gbrap14     = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrapf32, a=unknown, ca=u
 gbrap14be   = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrapf32, a=unknown, ca=unknown, ca_f=unknown
 gbrap16     = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrapf32, a=unknown, ca=unknown, ca_f=unknown
 gbrap16be   = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrapf32, a=unknown, ca=unknown, ca_f=unknown
+gbrap32     = no
+gbrap32be   = no
+gbrapf16    = no
+gbrapf16be  = no
 gbrapf32    = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrapf32, a=unknown, ca=unknown, ca_f=unknown
 gbrapf32be  = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrapf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp        = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrp, a=unknown, ca=unknown, ca_f=unknown
 gbrp1       = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp10      = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp10be    = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
+gbrp10msb   = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
+gbrp10msbbe = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp12      = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp12be    = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
+gbrp12msb   = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
+gbrp12msbbe = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp14      = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp14be    = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp16      = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
@@ -66,6 +76,8 @@ gbrp5       = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=un
 gbrp6       = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp9       = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrp9be     = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
+gbrpf16     = no
+gbrpf16be   = no
 gbrpf32     = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gbrpf32be   = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 gray        = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayf32, a=unknown, ca=unknown, ca_f=unknown
@@ -77,9 +89,13 @@ gray14      = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayf32, a=unknown, ca=un
 gray14be    = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayf32, a=unknown, ca=unknown, ca_f=unknown
 gray16      = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayf32, a=unknown, ca=unknown, ca_f=unknown
 gray16be    = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayf32, a=unknown, ca=unknown, ca_f=unknown
+gray32      = no
+gray32be    = no
 gray9       = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayf32, a=unknown, ca=unknown, ca_f=unknown
 gray9be     = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayf32, a=unknown, ca=unknown, ca_f=unknown
 grayaf32    = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayaf32, a=unknown, ca=unknown, ca_f=unknown
+grayf16     = no
+grayf16be   = no
 grayf32     = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayf32, a=unknown, ca=unknown, ca_f=unknown
 grayf32be   = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayf32, a=unknown, ca=unknown, ca_f=unknown
 mediacodec  = no
@@ -93,6 +109,7 @@ nv20be      = align=2:1 ov=yuva422p, ov_f=yuva422pf, v_f=yuv422pf, a=gray, ca=gr
 nv21        = align=2:2 ov=yuva420p, ov_f=yuva420pf, v_f=yuv420pf, a=gray, ca=gray, ca_f=grayf32
 nv24        = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 nv42        = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
+ohcodec     = no
 opencl      = no
 p010        = align=2:2 ov=yuva420p, ov_f=yuva420pf, v_f=yuv420pf, a=gray, ca=gray, ca_f=grayf32
 p010be      = align=2:2 ov=yuva420p, ov_f=yuva420pf, v_f=yuv420pf, a=gray, ca=gray, ca_f=grayf32
@@ -128,17 +145,26 @@ rgb555be    = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrp, a=unknown, ca=unknown,
 rgb565      = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrp, a=unknown, ca=unknown, ca_f=unknown
 rgb565be    = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrp, a=unknown, ca=unknown, ca_f=unknown
 rgb8        = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrp, a=unknown, ca=unknown, ca_f=unknown
+rgb96       = no
+rgb96be     = no
 rgba        = align=1:1 ov=unknown, ov_f=gbrap, v_f=gbrap, a=unknown, ca=unknown, ca_f=unknown
+rgba128     = no
+rgba128be   = no
 rgba64      = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrapf32, a=unknown, ca=unknown, ca_f=unknown
 rgba64be    = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrapf32, a=unknown, ca=unknown, ca_f=unknown
 rgbaf16     = no
 rgbaf16be   = no
 rgbaf32     = no
 rgbaf32be   = no
+rgbf16      = no
+rgbf16be    = no
 rgbf32      = no
 rgbf32be    = no
+uyva        = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuva444pf, a=unknown, ca=unknown, ca_f=unknown
 uyvy422     = align=2:1 ov=yuva422p, ov_f=yuva422pf, v_f=yuv422pf, a=gray, ca=gray, ca_f=grayf32
 uyyvyy411   = no
+v30x        = no
+v30xbe      = no
 vaapi       = no
 vdpau       = no
 vdpau_output= no
@@ -146,6 +172,7 @@ videotoolbox= no
 vulkan      = no
 vuya        = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuva444pf, a=unknown, ca=unknown, ca_f=unknown
 vuyx        = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
+vyu444      = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 x2bgr10     = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 x2bgr10be   = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 x2rgb10be   = align=1:1 ov=unknown, ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
@@ -153,6 +180,8 @@ xv30        = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca
 xv30be      = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 xv36        = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 xv36be      = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
+xv48        = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
+xv48be      = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 xyz12       = align=1:1 ov=gbrap  , ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 xyz12be     = align=1:1 ov=gbrap  , ov_f=gbrapf32, v_f=gbrpf32, a=unknown, ca=unknown, ca_f=unknown
 y1          = no
@@ -160,9 +189,15 @@ y210        = align=2:1 ov=yuva422p, ov_f=yuva422pf, v_f=yuv422pf, a=gray, ca=gr
 y210be      = align=2:1 ov=yuva422p, ov_f=yuva422pf, v_f=yuv422pf, a=gray, ca=gray, ca_f=grayf32
 y212        = align=2:1 ov=yuva422p, ov_f=yuva422pf, v_f=yuv422pf, a=gray, ca=gray, ca_f=grayf32
 y212be      = align=2:1 ov=yuva422p, ov_f=yuva422pf, v_f=yuv422pf, a=gray, ca=gray, ca_f=grayf32
+y216        = align=2:1 ov=yuva422p, ov_f=yuva422pf, v_f=yuv422pf, a=gray, ca=gray, ca_f=grayf32
+y216be      = align=2:1 ov=yuva422p, ov_f=yuva422pf, v_f=yuv422pf, a=gray, ca=gray, ca_f=grayf32
 ya16        = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayaf32, a=unknown, ca=unknown, ca_f=unknown
 ya16be      = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayaf32, a=unknown, ca=unknown, ca_f=unknown
 ya8         = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayaf32, a=unknown, ca=unknown, ca_f=unknown
+yaf16       = no
+yaf16be     = no
+yaf32       = no
+yaf32be     = no
 yap16       = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayaf32, a=unknown, ca=unknown, ca_f=unknown
 yap8        = align=1:1 ov=yap8   , ov_f=grayaf32, v_f=grayaf32, a=unknown, ca=unknown, ca_f=unknown
 yuv410p     = no
@@ -202,8 +237,12 @@ yuv440pf    = no
 yuv444p     = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 yuv444p10   = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 yuv444p10be = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
+yuv444p10msb= align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
+yuv444p10msbbe= align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 yuv444p12   = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 yuv444p12be = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
+yuv444p12msb= align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
+yuv444p12msbbe= align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 yuv444p14   = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 yuv444p14be = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
 yuv444p16   = align=1:1 ov=yuva444p, ov_f=yuva444pf, v_f=yuv444pf, a=unknown, ca=unknown, ca_f=unknown
