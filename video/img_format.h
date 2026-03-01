@@ -247,6 +247,11 @@ enum mp_imgfmt {
     IMGFMT_BGR24,               // 3 bytes per pixel
     IMGFMT_RGB24,
 
+    IMGFMT_X2RGB10,             // 2pad 10r 10g 10b (MSB to LSB)
+    IMGFMT_X2BGR10,             // 2pad 10b 10g 10r (MSB to LSB)
+
+    IMGFMT_RGBAF16,
+
     // Like e.g. IMGFMT_ARGB, but has a padding byte instead of alpha
     IMGFMT_0RGB,
     IMGFMT_BGR0,
@@ -296,9 +301,6 @@ enum mp_imgfmt {
     IMGFMT_410APF,
     IMGFMT_411PF,
     IMGFMT_411APF,
-
-    // Accessed with bit-shifts, uint32_t units.
-    IMGFMT_RGB30,               // 2pad 10r 10g 10b (MSB to LSB)
 
     // Fringe formats for fringe RGB format repacking.
     IMGFMT_Y1,      // gray with 1 bit per pixel

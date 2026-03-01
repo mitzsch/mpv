@@ -257,6 +257,10 @@ Ctrl+v
     currently playing, it is played immediately. Only works on platforms that
     support the ``clipboard`` property.
 
+Ctrl+r
+    Reload the current file, preserving the time position and any changed
+    option. Empties any network cache.
+
 i and I
     Show/toggle an overlay displaying statistics about the currently playing
     file such as codec, framerate, number of dropped frames and so on. See
@@ -520,6 +524,13 @@ interpreted as protocol prefix, even though ``://`` can be part of a legal
 UNIX path. To avoid problems with arbitrary paths, you should be sure that
 absolute paths passed to mpv start with ``/``, and prefix relative paths with
 ``./``.
+
+URLs that are passed to mpv should be percent-encoded for it to work reliably.
+There are some heuristics in place that tries to automatically do it, but these
+heuristics are not foolproof. For example, in order to play a file literally
+named ``foo%20.mp4``, using ``http://localhost/foo%20.mp4`` without any
+percent-encoding will not work. Percent-encoding it as
+``http://localhost/foo%2520.mp4`` will work as expected.
 
 Using the ``file://`` pseudo-protocol is discouraged, because it involves
 strange URL unescaping rules.

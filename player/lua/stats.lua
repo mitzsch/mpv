@@ -35,6 +35,7 @@ local o = {
     file_tag_max_count = 16,         -- only show the first x file tags
     show_frame_info = false,         -- whether to show the current frame info
     term_clip = true,
+    track_info_selected_only = true, -- only show selected track info
     debug = false,
 
     -- Graph options and style
@@ -680,6 +681,7 @@ local function add_file(s, print_cache, print_tags)
     end
 
     if print_tags then
+        append_property(s, "duration", {prefix="Duration:"})
         local tags = mp.get_property_native("display-tags")
         local tags_displayed = 0
         for _, tag in ipairs(tags) do
@@ -1248,7 +1250,8 @@ local function add_track(c, t, i)
     append(c, t["external-filename"], {prefix="File:"})
     append(c, "", {prefix="Flags:"})
     local flags = {"default", "forced", "dependent", "visual-impaired",
-                   "hearing-impaired", "image", "albumart", "external"}
+                   "hearing-impaired", "original", "commentary", "image",
+                   "albumart", "external"}
     local any = false
     for _, flag in ipairs(flags) do
         if t[flag] then
@@ -1259,7 +1262,7 @@ local function add_track(c, t, i)
     if not any then
         table.remove(c)
     end
-    if append(c, t["codec-desc"], {prefix="Format:"}) then
+    if append(c, t["codec-desc"], {prefix="Codec:"}) then
         append(c, t["codec-profile"], {prefix="[", nl="", indent=" ", prefix_sep="",
                no_prefix_markup=true, suffix="]"})
         if t["codec"] ~= t["decoder"] then
@@ -1282,6 +1285,7 @@ local function add_track(c, t, i)
     if not t["image"] and t["demux-fps"] then
         append_fps(c, "track-list/" .. i .. "/demux-fps", "")
     end
+    append(c, t["format-name"], {prefix="Format:"})
     append(c, t["demux-rotation"], {prefix="Rotation:"})
     if t["demux-par"] then
         local num, den = float2rational(t["demux-par"])
@@ -1325,7 +1329,7 @@ local function track_info()
     table.insert(c, o.nl .. o.nl)
     add_file(c, false, true)
     for i, track in ipairs(mp.get_property_native("track-list")) do
-        if track['selected'] then
+        if track['selected'] or not o.track_info_selected_only then
             add_track(c, track, i - 1)
         end
     end
@@ -1469,7 +1473,7 @@ pages = {
     [o.key_page_2] = { idx = 2, f = vo_stats, desc = "Extended Frame Timings", scroll = true },
     [o.key_page_3] = { idx = 3, f = cache_stats, desc = "Cache Statistics" },
     [o.key_page_4] = { idx = 4, f = keybinding_info, desc = "Active Key Bindings", scroll = true },
-    [o.key_page_5] = { idx = 5, f = track_info, desc = "Selected Tracks Info", scroll = true },
+    [o.key_page_5] = { idx = 5, f = track_info, desc = "Tracks Info", scroll = true },
     [o.key_page_0] = { idx = 0, f = perf_stats, desc = "Internal Performance Info", scroll = true },
 }
 
@@ -1579,6 +1583,9 @@ local function unbind_scroll()
     end
 end
 
+local add_page_bindings
+local remove_page_bindings
+
 local function filter_bindings()
     input.get({
         prompt = "Filter bindings:",
@@ -1586,6 +1593,10 @@ local function filter_bindings()
             -- This is necessary to close the console if the oneshot
             -- display_timer expires without typing anything.
             searched_text = ""
+
+            -- Must be re-bound to override the console.lua bindings.
+            remove_page_bindings()
+            bind_scroll()
         end,
         edited = function (text)
             reset_scroll_offsets()
@@ -1599,6 +1610,7 @@ local function filter_bindings()
         closed = function ()
             searched_text = nil
             if display_timer:is_enabled() then
+                add_page_bindings()
                 print_page(curr_page)
                 if display_timer.oneshot then
                     display_timer:kill()
@@ -1606,7 +1618,6 @@ local function filter_bindings()
                 end
             end
         end,
-        dont_bind_up_down = true,
     })
 end
 
@@ -1648,7 +1659,7 @@ local function update_scroll_bindings(k)
 end
 
 -- Add keybindings for every page
-local function add_page_bindings()
+add_page_bindings = function()
     local function a(k)
         return function()
             reset_scroll_offsets()
@@ -1667,7 +1678,7 @@ end
 
 
 -- Remove keybindings for every page
-local function remove_page_bindings()
+remove_page_bindings = function()
     for k, _ in pairs(pages) do
         mp.remove_key_binding("__forced_"..k)
     end

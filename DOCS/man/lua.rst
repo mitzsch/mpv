@@ -938,7 +938,7 @@ REPL.
 
     ``opened``
         A callback invoked when the console is shown. This can be used to
-        present a list of options with ``input.set_log()``.
+        override keybinds set by the console with ``mp.add_forced_key_binding()``.
 
     ``edited``
         A callback invoked when the text changes. The first argument is the text
@@ -946,14 +946,21 @@ REPL.
 
     ``complete``
         A callback invoked when the user edits the text or moves the cursor. The
-        first argument is the text before the cursor. The callback should return
-        a table of the string candidate completion values and the 1-based cursor
+        first argument is the text before the cursor, and the second argument is
+        a response function which can be called to present completion values to
+        the user.
+
+        The first argument to the response function is a table of the string
+        candidate completion values, and the second argument is the 1-based cursor
         position from which the completion starts. console will show the
         completions that fuzzily match the text between this position and the
-        cursor and allow selecting them.
+        cursor, which the user can select with ``TAB``. The completions will only
+        be shown to the user if the text before the cursor has not since changed.
+        The response function should be called with an empty table if there are no
+        completion values to display.
 
-        The third and optional return value is a string that will be appended to
-        the input line without displaying it in the completions.
+        The third and optional argument to the response function is a string that
+        will be appended to the input line without displaying it in the completions.
 
     ``autoselect_completion``
         Whether to automatically select the first completion on submit if one
@@ -1034,6 +1041,22 @@ REPL.
         If calling ``input.get()`` or ``input.select()`` again from inside the
         ``submit`` callback, setting this option to ``true`` allows a seamless
         transition without the console closing and reopening.
+
+    ``opened``
+        A callback invoked when the console is shown. This can be used to
+        override keybinds set by the console with ``mp.add_forced_key_binding()``.
+
+    ``closed``
+        A callback invoked when the console is hidden, either because
+        ``input.terminate()`` was invoked from the other callbacks, or because
+        the user closed it with a key binding. The first argument is the text in
+        the console, and the second argument is the cursor position.
+
+    ``default_text``
+        A string to pre-fill the input field with.
+
+    ``cursor_position``
+        The initial cursor position, starting from 1.
 
     Example:
 

@@ -431,6 +431,8 @@ static struct track *add_stream_track(struct MPContext *mpctx,
         .dependent_track = stream->dependent_track,
         .visual_impaired_track = stream->visual_impaired_track,
         .hearing_impaired_track = stream->hearing_impaired_track,
+        .original_track = stream->original_track,
+        .commentary_track = stream->commentary_track,
         .image = stream->image,
         .attached_picture = stream->attached_picture != NULL,
         .lang = stream->lang,
@@ -1983,7 +1985,13 @@ terminate_playback:
     // Possibly stop ongoing async commands.
     mp_abort_playback_async(mpctx);
 
-    m_config_restore_backups(mpctx->mconfig);
+    struct playlist_entry *current = mpctx->playlist->current;
+    bool reloading = mpctx->stop_play == PT_CURRENT_ENTRY &&
+                     current && current->reloading;
+    if (current)
+        current->reloading = false;
+    if (!reloading)
+        m_config_restore_backups(mpctx->mconfig);
 
     TA_FREEP(&mpctx->filter_root);
     talloc_free(mpctx->filtered_tags);

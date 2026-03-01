@@ -12,6 +12,7 @@
 -- OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 -- CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+local msg = require "mp.msg"
 local utils = require "mp.utils"
 local assdraw = require "mp.assdraw"
 
@@ -53,6 +54,7 @@ local opts = {
 local styles = {
     error = "{\\1c&H7a77f2&}",
     completion = "{\\1c&Hcc99cc&}",
+    inactive = "{\\alpha&H66&}",
 }
 for key, style in pairs(styles) do
     styles[key] = style .. "{\\3c&H111111&}"
@@ -93,18 +95,16 @@ local MAX_LOG_LINES = 10000
 local log_buffers = {}
 local log_offset = 0
 local key_bindings = {}
-local dont_bind_up_down = false
 local global_margins = { t = 0, b = 0 }
 local input_caller
 local input_caller_handler
 local keep_open = false
 
 local completion_buffer = {}
+local dim_completions = false
 local selected_completion_index
 local completion_pos
 local completion_append
-local completion_old_line
-local completion_old_cursor
 local autoselect_completion
 local has_completions
 
@@ -120,8 +120,14 @@ local horizontal_offset = 0
 local complete
 local cycle_through_completions
 local set_active
+local render
 
 local property_cache = {}
+
+local completion_timer = mp.add_timeout(0.1, function()
+    dim_completions = true
+    render()
+end, true)
 
 
 local function get_property_cached(name, def)
@@ -200,6 +206,17 @@ local function utf8_positions(str)
     end
 
     return positions
+end
+
+-- Converts values to strings, using JSON formatting for tables.
+-- JSON is used instead of utils.to_string as that is the format the
+-- values are received in from script-messages.
+local function to_string(v)
+    if type(v) == "table" then
+        return utils.format_json(v)
+    else
+        return tostring(v)
+    end
 end
 
 
@@ -454,8 +471,9 @@ local function format_grid(list, width_max, rows_max)
             columns[column] = ass_escape(string.format(format_string, list[i]))
 
             if should_highlight_completion(i) then
-                columns[column] = get_selected_ass() .. columns[column] ..
-                                  "{\\b\\1a&\\3a&}" .. styles.completion
+                local style_override = dim_completions and styles.inactive or ""
+                columns[column] = get_selected_ass() .. style_override .. columns[column] ..
+                                  "{\\b\\1a&\\3a&}" .. styles.completion .. style_override
             end
         end
         -- first row is at the bottom
@@ -663,14 +681,16 @@ local function print_to_terminal()
             log = log .. log_line.terminal_style .. log_line.text .. "\027[0m\n"
         end
 
-        for i, completion in ipairs(completion_buffer) do
-            if should_highlight_completion(i) then
-                log = log .. terminal_styles.selected_completion ..
-                      completion .. "\027[0m"
-            else
-                log = log .. completion
+        if not dim_completions then
+            for i, completion in ipairs(completion_buffer) do
+                if should_highlight_completion(i) then
+                    log = log .. terminal_styles.selected_completion ..
+                          completion .. "\027[0m"
+                else
+                    log = log .. completion
+                end
+                log = log .. (i < #completion_buffer and "\t" or "\n")
             end
-            log = log .. (i < #completion_buffer and "\t" or "\n")
         end
     end
 
@@ -686,7 +706,7 @@ local function print_to_terminal()
     osd_msg_active = true
 end
 
-local function render()
+render = function()
     pending_update = false
 
     if terminal_output() then
@@ -783,7 +803,9 @@ local function render()
 
         local completions, rows = format_grid(completion_buffer, width_max, max_lines)
         max_lines = max_lines - rows
-        completion_ass = style .. styles.completion .. completions .. "\\N"
+        completion_ass = style .. styles.completion ..
+                         (dim_completions and styles.inactive or "") ..
+                         completions .. "\\N"
     end
 
     -- Background
@@ -1454,6 +1476,11 @@ local function strip_common_characters(str, prefix)
 end
 
 cycle_through_completions = function (backwards)
+    -- Disable tab completions while waiting for completion responses
+    if completion_timer:is_enabled() or dim_completions then
+        return
+    end
+
     if #completion_buffer == 0 then
         -- Allow Tab completion of commands before typing anything.
         if line == "" then
@@ -1479,10 +1506,14 @@ cycle_through_completions = function (backwards)
     render()
 end
 
+local function enable_completions()
+    dim_completions = false
+    completion_timer:kill()
+end
+
 -- Show autocompletions.
 complete = function ()
-    completion_old_line = line
-    completion_old_cursor = cursor
+    completion_timer:resume()
     mp.commandv("script-message-to", input_caller, input_caller_handler,
                 "complete", utils.format_json({line:sub(1, cursor - 1)}))
     render()
@@ -1573,12 +1604,10 @@ local function define_key_bindings()
         return
     end
     for _, bind in ipairs(get_bindings()) do
-        if not (dont_bind_up_down and (bind[1] == "up" or bind[1] == "down")) then
-            -- Generate arbitrary name for removing the bindings later.
-            local name = "_console_" .. (#key_bindings + 1)
-            key_bindings[#key_bindings + 1] = name
-            mp.add_forced_key_binding(bind[1], name, bind[2], {repeatable = true})
-        end
+        -- Generate arbitrary name for removing the bindings later.
+        local name = "_console_" .. (#key_bindings + 1)
+        key_bindings[#key_bindings + 1] = name
+        mp.add_forced_key_binding(bind[1], name, bind[2], {repeatable = true})
     end
     mp.add_forced_key_binding("any_unicode", "_console_text", text_input,
         {repeatable = true, complex = true})
@@ -1651,6 +1680,7 @@ set_active = function (active)
         open = false
         undefine_key_bindings()
         unbind_mouse()
+        completion_timer:kill()
         mp.set_property_bool("user-data/mpv/console/open", false)
         mp.set_property_bool("input-ime", ime_active)
         mp.commandv("script-message-to", input_caller, input_caller_handler,
@@ -1669,24 +1699,47 @@ mp.register_script_message("disable", function(message)
 end)
 
 mp.register_script_message("get-input", function (args)
+    args = utils.parse_json(args)
+    if type(args) ~= "table" then
+        return msg.error("Input request aborted - " ..
+                         "get-input must be passed a JSON formatted table.")
+    end
+
+    if not args.client_name or not args.handler_id then
+        return msg.error("Input request aborted - " ..
+                         "get-input must be passed a 'client_name' and 'handler_id'")
+    end
+
     if open then
         mp.commandv("script-message-to", input_caller, input_caller_handler,
                     "closed", utils.format_json({line, cursor}))
     end
 
-    args = utils.parse_json(args)
     input_caller = args.client_name
     input_caller_handler = args.handler_id
-    prompt = args.prompt or ""
-    line = args.default_text or ""
-    cursor = tonumber(args.cursor_position) or line:len() + 1
+    prompt = to_string(args.prompt or "")
+    line = to_string(args.default_text or "")
+    cursor = math.floor(tonumber(args.cursor_position) or line:len() + 1)
     keep_open = args.keep_open
     default_item = args.default_item
     has_completions = args.has_completions
-    dont_bind_up_down = args.dont_bind_up_down
     searching_history = false
+    if cursor < 1 then
+        cursor = 1
+    elseif cursor > line:len() + 1 then
+        cursor = line:len() + 1
+    end
+
+    enable_completions()
 
     if args.items then
+        if type(args.items) ~= "table" then
+            msg.warn(("input.select (%s): 'items' must be a table, instead received a %s"
+                     ):format(input_caller, type(args.items)))
+            -- set as empty to avoid errors
+            args.items = {}
+        end
+
         selectable_items = {}
         horizontal_offset = 0
 
@@ -1700,6 +1753,7 @@ mp.register_script_message("get-input", function (args)
         end
 
         for i, item in ipairs(args.items) do
+            item = to_string(item)
             local last = next_utf8(item, limit) - 1
             selectable_items[i] = item:gsub("[\r\n].*", "…"):sub(1, last) ..
                                   (last < #item and "…" or "")
@@ -1711,7 +1765,7 @@ mp.register_script_message("get-input", function (args)
     else
         selectable_items = nil
         unbind_mouse()
-        id = args.id
+        id = args.id or input_caller .. args.prompt
         log_offset = 0
         completion_buffer = {}
         autoselect_completion = args.autoselect_completion
@@ -1722,38 +1776,39 @@ mp.register_script_message("get-input", function (args)
             histories_to_save[id] = ""
         end
         history = histories[id]
-        history_paths[id] = args.history_path
+
+        -- We probably do not want to be converting accidental non-string values to filepaths.
+        history_paths[id] = type(args.history_path) == "string" and args.history_path or nil
         read_history()
         history_pos = #history + 1
 
-        if line ~= "" then
-            complete()
-        elseif open then
-            -- This is needed to update the prompt if a new request is
-            -- received while another is still active.
-            render()
-        end
+        handle_cursor_move()
     end
 
     set_active(true)
+
+    -- We want to ensure the keybindings have been set before sending the "opened" event
+    -- in case scripts want to override our bindings.
+    mp.flush_keybindings()
     mp.commandv("script-message-to", input_caller, input_caller_handler, "opened")
 end)
 
 -- Add a line to the log buffer
 mp.register_script_message("log", function (message)
     message = utils.parse_json(message or "")
-    if not message or not message.log_id then
-        return
+    if type(message) ~= "table" or not message.log_id then
+        return msg.error("Line not appended to log buffer - " ..
+                         "log must be passed a JSON formatted table which contains a 'log_id'.")
     end
 
     local log_buffer = log_buffers[message.log_id]
     if not log_buffer then return end
 
     log_buffer[#log_buffer + 1] = {
-        text = message.text,
-        style = message.error and styles.error or message.style or "",
+        text = to_string(message.text or ""),
+        style = message.error and styles.error or to_string(message.style or ""),
         terminal_style = message.error and terminal_styles.error or
-                         message.terminal_style or "",
+                         to_string(message.terminal_style or ""),
     }
 
     if #log_buffer > MAX_LOG_LINES then
@@ -1777,22 +1832,31 @@ mp.register_script_message("log", function (message)
 end)
 
 mp.register_script_message("set-log", function (log_id, log)
-    if not log_id or not log then
-        return
+    log = utils.parse_json(log)
+    if not log_id then
+        return msg.error("Log buffer not overwritten - " ..
+                         "set-log must be passed a 'log_id' as the first argument.")
     end
 
-    log = utils.parse_json(log)
+    -- This error message provides extra details as mp.input passes the `log` table to
+    -- console.lua unchanged, meaning that this guard may be triggered by Lua and Js clients.
+    if type(log) ~= "table" then
+        return msg.error("Log buffer not overwritten - " ..
+                         "set-log must be passed a table as second argument, " ..
+                         ("instead received a %s."):format(type(log)))
+    end
+
     log_buffers[log_id] = {}
 
     for i = 1, #log do
         if type(log[i]) == "table" then
-            log[i].text = log[i].text
-            log[i].style = log[i].style or ""
-            log[i].terminal_style = log[i].terminal_style or ""
+            log[i].text = to_string(log[i].text or "")
+            log[i].style = to_string(log[i].style or "")
+            log[i].terminal_style = to_string(log[i].terminal_style or "")
             log_buffers[id][i] = log[i]
         else
             log_buffers[id][i] = {
-                text = log[i],
+                text = to_string(log[i] or ""),
                 style = "",
                 terminal_style = "",
             }
@@ -1806,23 +1870,47 @@ end)
 
 mp.register_script_message("complete", function (message)
     message = utils.parse_json(message)
+    if type(message) ~= "table" then
+        return msg.error("Completions not received - " ..
+                         "complete must be passed a JSON formatted table.")
+    end
 
-    if message.client_name ~= input_caller or message.handler_id ~= input_caller_handler
-       or line ~= completion_old_line or cursor ~= completion_old_cursor then
+    if message.client_name ~= input_caller or message.handler_id ~= input_caller_handler then
         return
     end
 
     completion_buffer = {}
     selected_completion_index = 0
     local completions = message.list
+
+    if type(completions) ~= "table" then
+        msg.warn(("Completions invalid (%s) - " ..
+                  "completions must be a table, instead received a %s"
+                 ):format(input_caller, type(completions)))
+        completions = {}
+    else
+        for i = 1, #completions do
+            completions[i] = to_string(completions[i])
+        end
+    end
+
     table.sort(completions)
-    completion_pos = message.start_pos
-    completion_append = message.append
+    completion_pos = math.floor(tonumber(message.start_pos) or 1)
+    completion_append = to_string(message.append or "")
+    if completion_pos < 1 then
+        completion_pos = 1
+    end
+
     for i, match in ipairs(fuzzy_find(line:sub(completion_pos, cursor - 1),
                                       completions)) do
         completion_buffer[i] = completions[match[1]]
     end
 
+    -- Rendering outdated completions makes the completions appear more
+    -- responsive, but we only want allow selecting up-to-date completions.
+    if line:sub(1, cursor - 1) == message.original_line then
+        enable_completions()
+    end
     render()
 end)
 

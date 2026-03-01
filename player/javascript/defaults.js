@@ -661,27 +661,35 @@ function register_event_handler(t) {
     var handler_id = "input-event/" + input_handle_counter++;
     latest_handler_id = handler_id;
 
-    mp.register_script_message(handler_id, function (type, args) {
-        if (latest_handler_id !== handler_id && type !== "closed")
+    mp.register_script_message(handler_id, function (event, args) {
+        if (event == "closed")
+            mp.unregister_script_message(handler_id);
+
+        if (!t[event] || (latest_handler_id !== handler_id && event !== "closed"))
             return;
 
-        if (t[type]) {
-            args = args ? JSON.parse(args) : [];
-            var result = t[type].apply(null, args);
+        args = args ? JSON.parse(args) : [];
 
-            if (type == "complete" && result) {
+        if (event == "complete") {
+            var complete = function(completions, completion_pos, completion_append) {
+                if (completions == undefined)
+                    return;
+
                 mp.commandv("script-message-to", "console", "complete", JSON.stringify({
                                 client_name: mp.script_name,
                                 handler_id: handler_id,
-                                list: result[0],
-                                start_pos: result[1],
-                                append: result[2] || "",
+                                original_line: args[0],
+                                list: completions,
+                                start_pos: completion_pos,
+                                append: completion_append || "",
                             }));
             }
-        }
 
-        if (type == "closed")
-            mp.unregister_script_message(handler_id);
+            args[1] = complete;
+            complete.apply(null, t[event].apply(null, args));
+        } else {
+            t[event].apply(null, args)
+        }
     })
 
     return handler_id;
@@ -697,8 +705,13 @@ function input_request(t) {
 
 mp.input = {
     get: function(t) {
-        t.id = t.id || mp.script_name + (t.prompt || "");
+        t.prompt = String(t.prompt || "")
+        t.id = t.id || mp.script_name + t.prompt;
         latest_log_id = t.id;
+        return input_request(t);
+    },
+    select: function(t) {
+        t.args = t.args || [];
         return input_request(t);
     },
     terminate: function () {
@@ -730,7 +743,6 @@ mp.input = {
         }
     }
 }
-mp.input.select = input_request;
 
 /**********************************************************************
  *  various
