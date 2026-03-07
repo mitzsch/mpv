@@ -52,6 +52,7 @@ struct vo_wayland_state {
     struct wl_surface       *video_surface;
     struct wl_surface       *callback_surface;
     struct wl_subsurface    *video_subsurface;
+    struct wl_event_queue   *color_queue;
 
     /* Geometry */
     struct mp_rect geometry;
@@ -97,7 +98,6 @@ struct vo_wayland_state {
     struct wp_color_management_surface_feedback_v1 *color_surface_feedback;
     struct wp_image_description_creator_icc_v1 *icc_creator;
     struct mp_image_params current_params;
-    bool image_description_pending;
     bool supports_parametric;
     bool supports_display_primaries;
     int primaries_map[PL_COLOR_PRIM_COUNT];
@@ -106,6 +106,7 @@ struct vo_wayland_state {
     uint32_t icc_size;
     struct pl_color_space preferred_csp;
     bool image_description_info_done;
+    bool image_description_pending;
 
     /* color-representation */
     struct wp_color_representation_manager_v1 *color_representation_manager;
