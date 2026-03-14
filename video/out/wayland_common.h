@@ -97,9 +97,12 @@ struct vo_wayland_state {
     struct wp_color_management_surface_v1 *color_surface;
     struct wp_color_management_surface_feedback_v1 *color_surface_feedback;
     struct wp_image_description_creator_icc_v1 *icc_creator;
+    struct mp_image_params last_hint_params;
     struct mp_image_params current_params;
     bool supports_parametric;
     bool supports_display_primaries;
+    bool supports_set_luminances;
+    bool supports_scrgb;
     int primaries_map[PL_COLOR_PRIM_COUNT];
     int transfer_map[PL_COLOR_TRC_COUNT];
     void *icc_file;

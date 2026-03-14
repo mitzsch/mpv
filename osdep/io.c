@@ -63,6 +63,11 @@ bool mp_set_cloexec(int fd)
 }
 
 #ifndef _WIN32
+int mp_dup_cloexec(int fd)
+{
+    return fcntl(fd, F_DUPFD_CLOEXEC);
+}
+
 int mp_make_cloexec_pipe(int pipes[2])
 {
     if (pipe(pipes) != 0) {
@@ -263,6 +268,24 @@ static int hstat(HANDLE h, struct mp_stat *buf)
     return 0;
 }
 
+int mp_dup_cloexec(int fd)
+{
+    HANDLE proc = GetCurrentProcess();
+    HANDLE src = (HANDLE)_get_osfhandle(fd), dup = INVALID_HANDLE_VALUE;
+    if (src == INVALID_HANDLE_VALUE)
+        return -1;
+    BOOL ok = DuplicateHandle(proc, src, proc, &dup, 0, FALSE, DUPLICATE_SAME_ACCESS);
+    if (!ok) {
+        set_errno_from_lasterror();
+        return -1;
+    }
+    int oflag = _O_RDWR | _O_NOINHERIT; // FIXME: find out the proper flags from the HANDLE
+    int dupfd = _open_osfhandle((intptr_t)dup, oflag);
+    if (dupfd < 0)
+        CloseHandle(dup);
+    return dupfd;
+}
+
 int mp_stat(const char *path, struct mp_stat *buf)
 {
     wchar_t *wpath = mp_from_utf8(NULL, path);
@@ -284,10 +307,8 @@ int mp_stat(const char *path, struct mp_stat *buf)
 int mp_fstat(int fd, struct mp_stat *buf)
 {
     HANDLE h = (HANDLE)_get_osfhandle(fd);
-    if (h == INVALID_HANDLE_VALUE) {
-        errno = EBADF;
+    if (h == INVALID_HANDLE_VALUE)
         return -1;
-    }
     // Use mpv's hstat() function rather than MSVCRT's fstat() because mpv's
     // supports directories and device/inode numbers.
     return hstat(h, buf);
@@ -815,10 +836,8 @@ void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
     mp_assert(flags == MAP_SHARED); // not implemented
 
     HANDLE osf = (HANDLE)_get_osfhandle(fd);
-    if (!osf) {
-        errno = EBADF;
+    if (osf == INVALID_HANDLE_VALUE)
         return MAP_FAILED;
-    }
 
     DWORD protect = 0;
     DWORD access = 0;

@@ -58,7 +58,7 @@ jobs:
         run: echo "timestamp=`date +%s%N`" >> $GITHUB_OUTPUT
 
       - name: Restore cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ env.TARGET }}-${{ steps.get_time.outputs.timestamp }}
@@ -116,13 +116,13 @@ jobs:
           PR=${{ github.event.pull_request.number && format('-pr{0}', github.event.pull_request.number) || '' }}
           echo "name=mpv-$VER$PR-${{ github.run_id }}-$TARGET" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: artifact/*
 
       - name: Save Cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         if: always()
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -164,7 +164,7 @@ jobs:
           "timestamp=$((Get-Date).Ticks)" >> $env:GITHUB_OUTPUT
 
       - name: Restore cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ matrix.target }}-${{ steps.get_time.outputs.timestamp }}
@@ -172,8 +172,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install meson==1.9.2
-          choco install ccache nasm
+          python -m pip install meson
+          winget install --accept-source-agreements --accept-package-agreements Ccache.Ccache NASM.NASM
+          echo "$env:LOCALAPPDATA\Microsoft\WinGet\Links" >> $env:GITHUB_PATH
           # For cargo -C
           rustup default nightly
 
@@ -235,7 +236,7 @@ jobs:
           $name = "mpv-$VER$PR-${{ github.run_id }}-${{ matrix.target }}"
           "name=$name" >> $env:GITHUB_OUTPUT
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: |
@@ -245,14 +246,14 @@ jobs:
             !build/mpv.lib
             !build/mpv.pdb
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.artifact.outputs.name }}-pdb
           path: |
             build/mpv.pdb
 
       - name: Save Cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         if: always()
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -346,7 +347,7 @@ jobs:
           PR=${{ github.event.pull_request.number && format('-pr{0}', github.event.pull_request.number) || '' }}
           echo "name=mpv-$VER$PR-${{ github.run_id }}-$TARGET" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: ${{ matrix.arch != 'test' }}
         with:
           name: ${{ steps.artifact.outputs.name }}
@@ -478,7 +479,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - name: Test in OpenBSD VM
-      uses: cross-platform-actions/action@v0.30.0
+      uses: cross-platform-actions/action@v0.32.0
       with:
         operating_system: openbsd
         version: '7.8'
@@ -524,7 +525,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - name: Test in FreeBSD VM
-      uses: cross-platform-actions/action@v0.30.0
+      uses: cross-platform-actions/action@v0.32.0
       with:
         operating_system: freebsd
         version: '14.3'
