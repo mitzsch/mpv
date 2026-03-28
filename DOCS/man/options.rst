@@ -3532,6 +3532,15 @@ Window
 
     .. note::
 
+        The geometry size and position are applied during window initialization.
+        Subsequent automatic resizes (via ``--auto-window-resize``) reapply the
+        size from ``--geometry`` but not the position, unless
+        ``--force-window-position`` is enabled. Updating ``--geometry`` during
+        playback always applies the position, regardless of the
+        ``--force-window-position`` setting.
+
+    .. note::
+
         Generally only supported by GUI VOs. Ignored for encoding.
 
     .. admonition:: Note (macOS)
@@ -3684,10 +3693,14 @@ Window
     only ones that have this optimization (i.e. everything else always renders
     regardless of visibility).
 
-``--force-window-position``
-    Forcefully move mpv's video output window to default location whenever
-    there is a change in video parameters, video stream or file. This used to
-    be the default behavior. Currently only affects Windows, X11, macvk and SDL VOs.
+``--force-window-position=<yes|no>``
+    Controls whether the window is moved back to its initial position after an
+    automatic resize due to video stream size changes (see
+    ``--auto-window-resize``). When disabled, the window preserves its current
+    position and only resizes to match the new video size. When enabled, the
+    window is repositioned to the initial location set by ``--geometry``, or
+    the center of the screen if no geometry is specified. Currently only
+    affects Windows, X11, macvk and SDL VOs. (default: no)
 
 ``--auto-window-resize=<yes|no>``
     By default, mpv will automatically resize itself if the video's size changes
@@ -7353,8 +7366,13 @@ them.
     Constrains the gamut of the display. You can use this option to output e.g.
     DCIP3-in-BT.2020. Set ``--target-prim`` to the primaries of the containing
     colorspace (into which values will be encoded), and ``--target-gamut`` to
-    the gamut you want to limit colors to. Takes the same values as
-    ``--target-prim``. (Only for ``--vo=gpu-next``)
+    the gamut you want to limit colors to.
+
+    Accepts either a named primary set (same values as ``--target-prim``) or
+    8 comma-separated CIE xy chromaticity values specifying custom primaries
+    in the format ``Rx,Ry,Gx,Gy,Bx,By,Wx,Wy`` (red, green, blue, white point).
+    All values must be in the range 0.0-1.0. Use ``--target-gamut=help`` to
+    list all named primaries. (Only for ``--vo=gpu-next``)
 
     .. note::
 

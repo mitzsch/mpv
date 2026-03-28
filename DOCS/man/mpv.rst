@@ -1443,22 +1443,28 @@ PROTOCOLS
 
     Only works with seekable streams.
 
-    Examples::
+    .. admonition:: Example
 
-      mpv slice://1g-2g@cap.ts
+        ::
 
-      This starts reading from cap.ts after seeking 1 GiB, then
-      reads until reaching 2 GiB or end of file.
+            mpv slice://1g-2g@cap.ts
 
-      mpv slice://1g-+2g@cap.ts
+        This starts reading from cap.ts after seeking 1 GiB, then
+        reads until reaching 2 GiB or end of file.
 
-      This starts reading from cap.ts after seeking 1 GiB, then
-      reads until reaching 3 GiB or end of file.
+        ::
 
-      mpv slice://100m@appending://cap.ts
+            mpv slice://1g-+2g@cap.ts
 
-      This starts reading from cap.ts after seeking 100MiB, then
-      reads until end of file.
+        This starts reading from cap.ts after seeking 1 GiB, then
+        reads until reaching 3 GiB or end of file.
+
+        ::
+
+            mpv slice://100m@appending://cap.ts
+
+        This starts reading from cap.ts after seeking 100MiB, then
+        reads until end of file.
 
 ``null://``
 
@@ -1473,6 +1479,20 @@ PROTOCOLS
 ``hex://data``
 
     Like ``memory://``, but the string is interpreted as hexdump.
+
+``archive://[ARCHIVE PATH]|[FILE PATH IN ARCHIVE]``
+
+    Open a file at the specified path inside an archive. Requires libarchive
+    feature enabled. The archive path must have all ``%`` and ``|`` characters
+    URL escaped. The file path should not be URL escaped.
+
+    .. admonition:: Example
+
+        ::
+
+            mpv "archive://file.zip|video.mkv"
+
+        This will play ``video.mkv`` in the archive file ``file.zip``.
 
 PSEUDO GUI MODE
 ===============

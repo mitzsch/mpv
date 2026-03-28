@@ -1282,7 +1282,7 @@ static int tag_property(int action, void *arg, struct mp_tags *tags)
     case M_PROPERTY_KEY_ACTION: {
         struct m_property_action_arg *ka = arg;
         bstr key;
-        char *rem;
+        const char *rem;
         m_property_split_path(ka->key, &key, &rem);
         if (bstr_equals0(key, "list")) {
             struct m_property_action_arg nka = *ka;
@@ -1352,7 +1352,7 @@ static int mp_property_filter_metadata(void *ctx, struct m_property *prop,
     if (action == M_PROPERTY_KEY_ACTION) {
         struct m_property_action_arg *ka = arg;
         bstr key;
-        char *rem;
+        const char *rem;
         m_property_split_path(ka->key, &key, &rem);
         struct mp_tags *metadata = NULL;
         struct mp_output_chain *chain = NULL;
@@ -2115,7 +2115,7 @@ static int get_track_entry(int item, int action, void *arg, void *ctx)
         struct m_property_action_arg *ka = arg;
         if (!strncmp(ka->key, "metadata/", 9)) {
             bstr key = {0};
-            char *rem = "";
+            const char *rem = "";
             m_property_split_path(ka->key, &key, &rem);
             ka->key = rem;
             if (!rem[0]) {
@@ -2253,7 +2253,7 @@ static int mp_property_current_tracks(void *ctx, struct m_property *prop,
 
     struct m_property_action_arg *ka = arg;
     bstr key;
-    char *rem;
+    const char *rem;
     m_property_split_path(ka->key, &key, &rem);
 
     if (bstr_equals0(key, "video")) {
@@ -2422,16 +2422,9 @@ static int property_imgparams(const struct mp_image_params *p, int action, void 
         for (int i = 0; i < desc.num_planes; i++)
             bpp += desc.bpp[i] >> (desc.xs[i] + desc.ys[i]);
 
-#if PL_API_VER >= 344
         // If PL_ALPHA_NONE is supported, use it directly, unless in auto mode.
         if ((desc.flags & MP_IMGFLAG_ALPHA) && alpha == PL_ALPHA_UNKNOWN)
             alpha = PL_ALPHA_INDEPENDENT;
-#else
-        // Alpha type is not supported by FFmpeg, so PL_ALPHA_UNKNOWN may mean alpha
-        // is of an unknown type, or simply not present. Normalize to AUTO=no alpha.
-        if (!!(desc.flags & MP_IMGFLAG_ALPHA) != (alpha != PL_ALPHA_UNKNOWN))
-            alpha = (desc.flags & MP_IMGFLAG_ALPHA) ? PL_ALPHA_INDEPENDENT : PL_ALPHA_UNKNOWN;
-#endif
     }
 
     const struct pl_hdr_metadata *hdr = &p->color.hdr;
@@ -3505,11 +3498,11 @@ static int mp_property_playlist(void *ctx, struct m_property *prop,
             if (pl->current == e)
                 res = append_selected_style(mpctx, res);
             const char *reset = pl->current == e ? get_style_reset(mpctx) : "";
-            char *p = e->title;
+            const char *p = e->title;
             if (!p || mpctx->opts->playlist_entry_name > 0) {
                 p = e->filename;
                 if (!mp_is_url(bstr0(p))) {
-                    char *s = mp_basename(e->filename);
+                    const char *s = mp_basename(e->filename);
                     if (s[0])
                         p = s;
                 }
@@ -3874,7 +3867,7 @@ static int mp_property_option_info(void *ctx, struct m_property *prop,
     case M_PROPERTY_KEY_ACTION: {
         struct m_property_action_arg *ka = arg;
         bstr key;
-        char *rem;
+        const char *rem;
         m_property_split_path(ka->key, &key, &rem);
         struct m_config_option *co = m_config_get_co(mpctx->mconfig, key);
         if (!co)
@@ -4134,7 +4127,7 @@ static int do_op_udata(struct udata_ctx* ctx, int action, void *arg)
 
         // See if the next layer down will also be a sub-object access
         bstr key;
-        char *rem;
+        const char *rem;
         bool has_split = m_property_split_path(act->key, &key, &rem);
 
         if (!has_split && act->action == M_PROPERTY_DELETE) {
@@ -7158,6 +7151,20 @@ static void cmd_begin_vo_dragging(void *p)
         vo_control(vo, VOCTRL_BEGIN_DRAGGING, NULL);
 }
 
+static void cmd_update_clipboard(void *p)
+{
+    struct mp_cmd_ctx *cmd = p;
+    struct MPContext *mpctx = cmd->mpctx;
+    struct clipboard_access_params params = {.type = cmd->args[0].v.i};
+    double timeout = cmd->args[1].v.i / 1000.0;
+    bool success = false;
+
+    mp_core_unlock(mpctx);
+    success = mp_clipboard_update_data(mpctx->clipboard, &params, cmd->abort->cancel, timeout);
+    mp_core_lock(mpctx);
+    cmd->success = success;
+}
+
 static void cmd_context_menu(void *p)
 {
     struct mp_cmd_ctx *cmd = p;
@@ -7711,6 +7718,16 @@ const struct mp_cmd_def mp_cmds[] = {
     { "ab-loop-align-cache", cmd_align_cache_ab },
 
     { "begin-vo-dragging", cmd_begin_vo_dragging },
+
+    { "update-clipboard", cmd_update_clipboard,
+        { {"type", OPT_CHOICE(v.i,
+              {"text", CLIPBOARD_TARGET_CLIPBOARD},
+              {"text-primary", CLIPBOARD_TARGET_PRIMARY_SELECTION})},
+          {"timeout", OPT_INT(v.i), OPTDEF_INT(10)},
+          },
+        .spawn_thread = true,
+        .can_abort = true,
+    },
 
     { "context-menu", cmd_context_menu },
 

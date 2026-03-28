@@ -52,7 +52,6 @@ local user_opts = {
     sub_margins = false,        -- adjust sub-margin-y to not overlap with OSC
     osd_margins = true,         -- adjust osd-margin-y to not overlap with OSC
     windowcontrols = "auto",    -- whether to show window controls
-    windowcontrols_fullscreen = false, -- show window controls in fullscreen
     windowcontrols_alignment = "right", -- which side to show window controls on
     windowcontrols_title = "${media-title}", -- same as title but for windowcontrols
     windowcontrols_independent = true, -- show window controls and bottom bar independently
@@ -720,10 +719,7 @@ end
 local function window_controls_enabled()
     local val = user_opts.windowcontrols
     if val == "auto" then
-        if state.fullscreen then
-            return user_opts.windowcontrols_fullscreen
-        end
-        return not state.border or not state.title_bar
+        return not (state.border and state.title_bar)
     else
         return val ~= "no"
     end
@@ -2042,13 +2038,12 @@ layouts["floating"] = function ()
     -- Title row (optional)
     if show_title then
         lo = add_layout("title")
-        local title_reserved = 160
         lo.geometry = {x = x - half_w, y = tile_pos, an = 4,
-            w = half_w * 2 - title_reserved, h = title_h}
+            w = half_w * 2, h = title_h}
         lo.style = string.format("%s{\\clip(%f,%f,%f,%f)}",
             osc_styles.vidtitle,
-            x - half_w, tile_pos - title_h, x + half_w - title_reserved, tile_pos + title_h)
-        lo.button.maxchars = user_opts.boxmaxchars
+            x - half_w, tile_pos - title_h, x + half_w, tile_pos + title_h)
+        lo.button.maxchars = 105
     end
 
     -- Seekbar row
