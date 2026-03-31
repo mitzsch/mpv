@@ -709,7 +709,7 @@ static void tablet_tool_handle_down(void *data,
     enum xdg_toplevel_resize_edge edge;
     if (!mp_input_test_dragging(wl->vo->input_ctx, wl->mouse_x, wl->mouse_y) &&
         !wl->locked_size && !wl->opts->border &&
-        check_for_resize(wl, wl->opts->wl_edge_pixels_touch, &edge))
+        check_for_resize(wl, wl->opts->wl_edge_pixels_pointer, &edge))
     {
         xdg_toplevel_resize(wl->xdg_toplevel, tablet_tool->seat->seat, serial, edge);
         return;
@@ -1936,7 +1936,7 @@ resize:
                mp_rect_w(wl->geometry), mp_rect_h(wl->geometry));
 
     wl->pending_vo_events |= VO_EVENT_RESIZE;
-    wl->override_surface_local = false;
+    wl->override_surface_local = width == 0 || height == 0;
     wl->toplevel_configured = true;
 }
 
@@ -3043,6 +3043,7 @@ static int check_for_resize(struct vo_wayland_state *wl, int edge_pixels,
     int pos[2] = { wl->mouse_x, wl->mouse_y };
     *edges = 0;
 
+    edge_pixels = handle_round(wl->scaling, edge_pixels);
     if (pos[0] < edge_pixels)
         *edges |= XDG_TOPLEVEL_RESIZE_EDGE_LEFT;
     if (pos[0] > (mp_rect_w(wl->geometry) - edge_pixels))
@@ -4360,10 +4361,15 @@ void vo_wayland_handle_color(struct vo_wayland_state *wl, struct mp_image_params
 
 void vo_wayland_handle_scale(struct vo_wayland_state *wl)
 {
-    int width = wl->override_surface_local ? lround(mp_rect_w(wl->geometry) / wl->scaling_factor) :
-                                             mp_rect_w(wl->surface_local);
-    int height = wl->override_surface_local ? lround(mp_rect_h(wl->geometry) / wl->scaling_factor) :
-                                             mp_rect_h(wl->surface_local);
+    int width, height;
+    if (!wl->override_surface_local && mp_rect_w(wl->surface_local) != 0 &&
+                                       mp_rect_h(wl->surface_local) != 0) {
+        width = mp_rect_w(wl->surface_local);
+        height = mp_rect_h(wl->surface_local);
+    } else {
+        width = lround(mp_rect_w(wl->geometry) / wl->scaling_factor);
+        height = lround(mp_rect_h(wl->geometry) / wl->scaling_factor);
+    }
     wp_viewport_set_destination(wl->viewport, width, height);
 }
 
