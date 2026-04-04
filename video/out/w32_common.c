@@ -1746,12 +1746,23 @@ static mp_once window_class_init_once = MP_STATIC_ONCE_INITIALIZER;
 static ATOM window_class;
 static void register_window_class(void)
 {
+    // MPV_WINDOW_ICON: embedders set this env var to the icon resource name
+    // in the host executable (e.g. "IDI_ICON1"). When set, LoadIcon uses the
+    // exe module instead of the libmpv DLL, so the embedder's icon appears
+    // from the first frame with no flash.
+    HICON icon = NULL;
+    wchar_t icon_name[64];
+    if (GetEnvironmentVariableW(L"MPV_WINDOW_ICON", icon_name, 64) > 0)
+        icon = LoadIconW(GetModuleHandleW(NULL), icon_name);
+    if (!icon)
+        icon = LoadIconW(HINST_THISCOMPONENT, L"IDI_ICON1");
+
     window_class = RegisterClassExW(&(WNDCLASSEXW) {
         .cbSize = sizeof(WNDCLASSEXW),
         .style = CS_HREDRAW | CS_VREDRAW,
         .lpfnWndProc = WndProc,
         .hInstance = HINST_THISCOMPONENT,
-        .hIcon = LoadIconW(HINST_THISCOMPONENT, L"IDI_ICON1"),
+        .hIcon = icon,
         .hCursor = LoadCursor(NULL, IDC_ARROW),
         .hbrBackground = (HBRUSH) GetStockObject(BLACK_BRUSH),
         .lpszClassName = MPV_WINDOW_CLASS_NAME,
@@ -2091,6 +2102,7 @@ static MP_THREAD_VOID gui_thread(void *ptr)
         MP_ERR(w32, "unable to create window!\n");
         goto done;
     }
+
 
     w32->menu_ctx = mp_win32_menu_init(w32->window);
     update_dark_mode(w32);

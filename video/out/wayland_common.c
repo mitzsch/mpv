@@ -34,7 +34,9 @@
 #include "present_sync.h"
 #include "video/out/gpu/video.h"
 #include "wayland_common.h"
+#include "wayland_configure_cb.h"
 #include "win_state.h"
+
 
 // Generated from wayland-protocols
 #include "idle-inhibit-unstable-v1.h"
@@ -1938,11 +1940,20 @@ resize:
     wl->pending_vo_events |= VO_EVENT_RESIZE;
     wl->override_surface_local = width == 0 || height == 0;
     wl->toplevel_configured = true;
+
+    if (wl->configure_cb)
+        wl->configure_cb(wl->configure_cb_data,
+                         mp_rect_w(wl->geometry), mp_rect_h(wl->geometry),
+                         is_fullscreen);
 }
 
 static void handle_toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel)
 {
     struct vo_wayland_state *wl = data;
+    if (wl->close_cb) {
+        wl->close_cb(wl->close_cb_data);
+        return;
+    }
     mp_input_put_key(wl->vo->input_ctx, MP_KEY_CLOSE_WIN);
 }
 
@@ -4203,6 +4214,42 @@ int vo_wayland_control(struct vo *vo, int *events, int request, void *arg)
     }
     case VOCTRL_GET_FOCUSED: {
         *(bool *)arg = wl->focused;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_DISPLAY: {
+        *(int64_t *)arg = (intptr_t)wl->display;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_SURFACE: {
+        *(int64_t *)arg = (intptr_t)wl->surface;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_XDG_TOPLEVEL: {
+        *(int64_t *)arg = (intptr_t)wl->xdg_toplevel;
+        return VO_TRUE;
+    }
+    case VOCTRL_SET_WAYLAND_CONFIGURE_CB: {
+        struct vo_wayland_configure_cb *cb = arg;
+        wl->configure_cb = cb->fn;
+        wl->configure_cb_data = cb->data;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_STATE: {
+        *(int64_t *)arg = (intptr_t)wl;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_CONFIGURE_CB_PTR: {
+        *(int64_t *)arg = (intptr_t)&wl->configure_cb;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_CLOSE_CB_PTR: {
+        *(int64_t *)arg = (intptr_t)&wl->close_cb;
+        return VO_TRUE;
+    }
+    case VOCTRL_TOGGLE_FULLSCREEN: {
+        wl->opts->fullscreen = !wl->opts->fullscreen;
+        m_config_cache_write_opt(wl->opts_cache, &wl->opts->fullscreen);
+        toggle_fullscreen(wl);
         return VO_TRUE;
     }
     case VOCTRL_GET_DISPLAY_NAMES: {

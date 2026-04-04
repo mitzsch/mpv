@@ -175,6 +175,13 @@ struct vo_wayland_state {
     struct xdg_surface      *xdg_surface;
     struct xdg_toplevel     *xdg_toplevel;
 
+    /* External callbacks (cef-mpv overlay) */
+    void (*configure_cb)(void *data, int width, int height, bool fullscreen);
+    void *configure_cb_data;
+    void (*close_cb)(void *data);
+    void *close_cb_data;
+
+
     /* viewporter */
     struct wp_viewporter *viewporter;
     struct wp_viewport   *viewport;
