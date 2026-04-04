@@ -1,6 +1,7 @@
 project('mpv',
         'c',
         license: ['GPL2+', 'LGPL2.1+'],
+        license_files: ['LICENSE.GPL', 'LICENSE.LGPL', 'Copyright'],
         version: files('./MPV_VERSION'),
         meson_version: '>=1.3.0',
         default_options: [
@@ -963,7 +964,7 @@ if features['direct3d']
     sources += files('video/out/vo_direct3d.c')
 endif
 
-drm = dependency('libdrm', version: '>= 2.4.105', required: get_option('drm'))
+drm = dependency('libdrm', version: '>= 2.4.114', required: get_option('drm'))
 libdisplay_info = dependency('libdisplay-info', version: '>= 0.1.1', required: get_option('drm'))
 features += {'drm': drm.found() and libdisplay_info.found() and
              (features['vt.h'] or features['consio.h'] or features['wsdisplay-usl-io.h'])}
@@ -1696,6 +1697,7 @@ if rst2man.found()
           '@INPUT@', '@OUTPUT@'],
         depfile: 'mpv.1.dep',
         install: true,
+        install_tag: 'man',
         install_dir: join_paths(mandir, 'man1')
     )
 endif
@@ -1712,6 +1714,7 @@ if rst2html.found()
           '@INPUT@', '@OUTPUT@'],
         depfile: 'mpv.html.dep',
         install: true,
+        install_tag: 'doc',
         install_dir: join_paths(datadir, 'doc', 'mpv')
     )
 endif
@@ -1730,6 +1733,7 @@ if rst2pdf.found()
             '@INPUT@', '-o', '@OUTPUT@'],
         depfile: 'mpv.pdf.dep',
         install: true,
+        install_tag: 'doc',
         install_dir: join_paths(datadir, 'doc', 'mpv')
     )
 endif
@@ -1826,28 +1830,30 @@ if get_option('cplayer')
     conf_files = ['etc/mpv.conf', 'etc/encoding-profiles.conf', 'etc/input.conf',
                   'etc/mplayer-input.conf', 'etc/restore-old-bindings.conf',
                   'etc/restore-osc-bindings.conf']
-    install_data(conf_files, install_dir: join_paths(datadir, 'doc', 'mpv'))
+    install_data(conf_files, install_tag: 'doc', install_dir: join_paths(datadir, 'doc', 'mpv'))
 
     bash_install_dir = join_paths(datadir, 'bash-completion', 'completions')
-    install_data('etc/mpv.bash-completion', install_dir: bash_install_dir, rename: 'mpv')
+    install_data('etc/mpv.bash-completion', install_tag: 'bash', install_dir: bash_install_dir, rename: 'mpv')
 
     zsh_install_dir = join_paths(datadir, 'zsh', 'site-functions')
-    install_data('etc/_mpv.zsh', install_dir: zsh_install_dir, rename: '_mpv')
+    install_data('etc/_mpv.zsh', install_tag: 'zsh', install_dir: zsh_install_dir, rename: '_mpv')
 
     fish_install_dir = join_paths(datadir, 'fish', 'vendor_completions.d')
-    install_data('etc/mpv.fish', install_dir: fish_install_dir, rename: 'mpv.fish')
+    install_data('etc/mpv.fish', install_tag: 'fish', install_dir: fish_install_dir, rename: 'mpv.fish')
 
-    install_data('etc/mpv.metainfo.xml', install_dir: join_paths(datadir, 'metainfo'))
+    install_data('etc/mpv.metainfo.xml', install_tag: 'xdg', install_dir: join_paths(datadir, 'metainfo'))
 
     foreach size: ['16x16', '32x32', '64x64', '128x128']
         icon_dir = join_paths(datadir, 'icons', 'hicolor', size, 'apps')
-        install_data('etc/mpv-icon-8bit-' + size + '.png', install_dir: icon_dir, rename: 'mpv.png')
+        install_data('etc/mpv-icon-8bit-' + size + '.png', install_tag: 'xdg',
+                     install_dir: icon_dir, rename: 'mpv.png')
     endforeach
 
     hicolor_dir = join_paths(datadir, 'icons', 'hicolor')
-    install_data('etc/mpv-gradient.svg', install_dir: join_paths(hicolor_dir, 'scalable', 'apps'),
-                 rename: 'mpv.svg')
-    install_data('etc/mpv-symbolic.svg', install_dir: join_paths(hicolor_dir, 'symbolic', 'apps'))
+    install_data('etc/mpv-gradient.svg', install_tag: 'xdg',
+                 install_dir: join_paths(hicolor_dir, 'scalable', 'apps'), rename: 'mpv.svg')
+    install_data('etc/mpv-symbolic.svg', install_tag: 'xdg',
+                 install_dir: join_paths(hicolor_dir, 'symbolic', 'apps'))
 
     mpv = executable('mpv', main_fn_source, objects: libmpv.extract_all_objects(recursive: true), dependencies: dependencies,
                      win_subsystem: get_option('win32-subsystem'), install: true)
@@ -1886,10 +1892,12 @@ if get_option('cplayer')
                 output: 'mpv.desktop',
                 command: [mpv_desktop, mpv_desktop_path, '@INPUT@', '@OUTPUT@'],
                 install: true,
+                install_tag: 'xdg',
                 install_dir: join_paths(datadir, 'applications'),
             )
         else
-            install_data('etc/mpv.desktop', install_dir: join_paths(datadir, 'applications'))
+            install_data('etc/mpv.desktop', install_tag: 'xdg',
+                         install_dir: join_paths(datadir, 'applications'))
         endif
     endif
 endif

@@ -30,6 +30,7 @@
 
 #include "config.h"
 #include "common/common.h"
+#include "common/stats.h"
 #include "misc/io_utils.h"
 #include "options/m_config.h"
 #include "options/options.h"
@@ -106,12 +107,15 @@ struct cache {
 struct priv {
     struct mp_log *log;
     struct mpv_global *global;
+    struct stats_ctx *stats;
     struct ra_ctx *ra_ctx;
     struct gpu_ctx *context;
     struct ra_hwdec_ctx hwdec_ctx;
     struct ra_hwdec_mapper *hwdec_mapper;
     struct timer_pool *hwdec_timer;
     struct mp_pass_perf hwdec_perf;
+    struct timer_pool *sw_upload_timer;
+    struct mp_pass_perf sw_upload_perf;
 
     // Allocated DR buffers
     mp_mutex dr_lock;
@@ -621,22 +625,26 @@ static bool hwdec_acquire(pl_gpu gpu, struct pl_frame *frame)
     if (!hwdec_reconfig(p, fp->hwdec, &mpi->params))
         return false;
 
+    stats_time_start(p->stats, "hwdec-map");
     timer_pool_start(p->hwdec_timer);
     if (ra_hwdec_mapper_map(p->hwdec_mapper, mpi) < 0) {
         MP_ERR(p, "Mapping hardware decoded surface failed.\n");
         timer_pool_stop(p->hwdec_timer);
+        stats_time_end(p->stats, "hwdec-map");
         return false;
     }
 
     for (int n = 0; n < frame->num_planes; n++) {
         if (!(frame->planes[n].texture = hwdec_get_tex(p, n))) {
             timer_pool_stop(p->hwdec_timer);
+            stats_time_end(p->stats, "hwdec-map");
             return false;
         }
     }
 
     timer_pool_stop(p->hwdec_timer);
     p->hwdec_perf = timer_pool_measure(p->hwdec_timer);
+    stats_time_end(p->stats, "hwdec-map");
 
     return true;
 }
@@ -719,6 +727,7 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
     }
 
     if (fp->hwdec) {
+        p->sw_upload_perf.count = 0;
 
         struct mp_imgfmt_desc desc = mp_imgfmt_get_desc(par.imgfmt);
         frame->acquire = hwdec_acquire;
@@ -743,6 +752,10 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
         }
 
     } else { // swdec
+        p->hwdec_perf.count = 0;
+
+        if (!p->sw_upload_timer)
+            p->sw_upload_timer = timer_pool_create(p->ra_ctx->ra);
 
         struct pl_plane_data data[4] = {0};
         bool use_uint = false;
@@ -753,6 +766,8 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
             use_uint = true;
 
         frame->num_planes = plane_data_from_imgfmt(data, &frame->repr.bits, mpi->imgfmt, use_uint);
+        stats_time_start(p->stats, "swdec-upload");
+        timer_pool_start(p->sw_upload_timer);
         for (int n = 0; n < frame->num_planes; n++) {
             struct pl_plane *plane = &frame->planes[n];
             data[n].width = mp_image_plane_w(mpi, n);
@@ -778,11 +793,16 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
 
             if (!pl_upload_plane(gpu, plane, &tex[n], &data[n])) {
                 MP_ERR(vo, "Failed uploading frame!\n");
+                timer_pool_stop(p->sw_upload_timer);
+                stats_time_end(p->stats, "swdec-upload");
                 talloc_free(data[n].priv);
                 talloc_free(mpi);
                 return false;
             }
         }
+        timer_pool_stop(p->sw_upload_timer);
+        p->sw_upload_perf = timer_pool_measure(p->sw_upload_timer);
+        stats_time_end(p->stats, "swdec-upload");
 
     }
 
@@ -1309,10 +1329,12 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
             target.color.transfer = PL_COLOR_TRC_SRGB;
 #endif
     }
+    stats_time_start(p->stats, "osd-update");
     update_overlays(vo, p->osd_res,
                     (frame->current && opts->blend_subs) ? OSD_DRAW_OSD_ONLY : 0,
                     PL_OVERLAY_COORDS_DST_FRAME, &p->osd_state, &target, frame->current,
                     frame->current ? frame->current->params.stereo3d : 0);
+    stats_time_end(p->stats, "osd-update");
     apply_crop(&target, p->dst, swframe.fbo->params.w, swframe.fbo->params.h);
     update_tm_viz(&pars->color_map_params, &target);
 
@@ -1383,9 +1405,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
                     };
                     enum pl_overlay_coords rel = opts->blend_subs == BLEND_SUBS_VIDEO
                         ? PL_OVERLAY_COORDS_SRC_CROP : PL_OVERLAY_COORDS_DST_CROP;
+                    stats_time_start(p->stats, "osd-blend-update");
                     update_overlays(vo, res, OSD_DRAW_SUB_ONLY,
                                     rel, &fp->subs, image, mpi,
                                     mpi->params.stereo3d);
+                    stats_time_end(p->stats, "osd-blend-update");
                     fp->osd_sync = p->osd_sync;
                 }
             } else {
@@ -1410,7 +1434,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
     }
 
     // Render frame
-    if (!pl_render_image_mix(p->rr, &mix, &target, &params)) {
+    stats_time_start(p->stats, "render");
+    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
+    stats_time_end(p->stats, "render");
+    if (!render_ok) {
         MP_ERR(vo, "Failed rendering frame!\n");
         goto done;
     }
@@ -1765,7 +1792,8 @@ done:
 
 static inline void copy_frame_info_to_mp(struct frame_info *pl,
                                          struct mp_frame_perf *mp,
-                                         struct mp_pass_perf *hwdec_perf)
+                                         struct mp_pass_perf *hwdec_perf,
+                                         struct mp_pass_perf *sw_upload_perf)
 {
     static_assert(MP_ARRAY_SIZE(pl->info) == MP_ARRAY_SIZE(mp->perf), "");
     mp_assert(pl->count <= VO_PASS_PERF_MAX);
@@ -1777,6 +1805,12 @@ static inline void copy_frame_info_to_mp(struct frame_info *pl,
     if (hwdec_perf && hwdec_perf->count > 0) {
         *perf++ = *hwdec_perf;
         snprintf(*desc, sizeof(*desc), "map frame (hwdec)");
+        desc++;
+    }
+
+    if (sw_upload_perf && sw_upload_perf->count > 0) {
+        *perf++ = *sw_upload_perf;
+        snprintf(*desc, sizeof(*desc), "upload frame");
         desc++;
     }
 
@@ -1857,8 +1891,8 @@ static int control(struct vo *vo, uint32_t request, void *data)
 
     case VOCTRL_PERFORMANCE_DATA: {
         struct voctrl_performance_data *perf = data;
-        copy_frame_info_to_mp(&p->perf_fresh, &perf->fresh, &p->hwdec_perf);
-        copy_frame_info_to_mp(&p->perf_redraw, &perf->redraw, NULL);
+        copy_frame_info_to_mp(&p->perf_fresh, &perf->fresh, &p->hwdec_perf, &p->sw_upload_perf);
+        copy_frame_info_to_mp(&p->perf_redraw, &perf->redraw, NULL, NULL);
         return true;
     }
 
@@ -2108,6 +2142,8 @@ static void uninit(struct vo *vo)
     for (int i = 0; i < p->num_user_hooks; i++)
         pl_mpv_user_shader_destroy(&p->user_hooks[i].hook);
 
+    timer_pool_destroy(p->sw_upload_timer);
+
     if (vo->hwdec_devs) {
         ra_hwdec_mapper_free(&p->hwdec_mapper);
         timer_pool_destroy(p->hwdec_timer);
@@ -2157,6 +2193,7 @@ static int preinit(struct vo *vo)
     p->video_eq = mp_csp_equalizer_create(p, vo->global);
     p->global = vo->global;
     p->log = vo->log;
+    p->stats = stats_ctx_create(p, vo->global, "vo/gpu-next");
 
     struct gl_video_opts *gl_opts = p->opts_cache->opts;
     struct ra_ctx_opts *ctx_opts = mp_get_config_group(vo, vo->global, &ra_ctx_conf);

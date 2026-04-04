@@ -1829,8 +1829,7 @@ This list uses the event name field value, and the C API symbol in brackets:
             Playback was ended by sending the quit command.
 
         ``error``
-            An error happened. In this case, an ``error`` field is present with
-            the error string.
+            An error happened.
 
         ``redirect``
             Happens with playlists and similar. Details see
@@ -1849,10 +1848,7 @@ This list uses the event name field value, and the C API symbol in brackets:
 
     ``file_error``
         Set to mpv error string describing the approximate reason why playback
-        failed. Unset if no error known. (In Lua scripting, this value was set
-        on the ``error`` field directly. This is deprecated since mpv 0.33.0.
-        In the future, this ``error`` field will be unset for this specific
-        event.)
+        failed. Unset if no error known.
 
     ``playlist_insert_id``
         If loading ended, because the playlist entry to be played was for example
@@ -2236,6 +2232,10 @@ Property list
     .. note:: This is only an estimate. (It's computed from two unreliable
               quantities: fps and possibly rounded timestamps.)
 
+``env``
+    Read-only table of all the environment variables. A specific variable can be
+    accessed as a sub-property, e.g. ``${env/HOME}`` returns ``$HOME`` if set.
+
 ``pid``
     Process-id of mpv.
 
@@ -2337,11 +2337,6 @@ Property list
 
     ``time-pos/full``
         ``time-pos`` with milliseconds.
-
-``time-start``
-    Deprecated. Always returns 0. Before mpv 0.14, this used to return the start
-    time of the file (could affect e.g. transport streams). See
-    ``--rebase-start-time`` option.
 
 ``time-remaining``
     Remaining length of the file in seconds. Note that the file duration is not
@@ -3640,6 +3635,8 @@ Property list
     If tracks of the requested type are selected via ``--lavfi-complex``, the
     first one is returned.
 
+    Note that this property cannot be used directly, a sub-property is required.
+
 ``chapter-list`` (RW)
     List of chapters, current entry marked.
 
@@ -4203,9 +4200,12 @@ Property list
                 "vararg"  MPV_FORMAT_FLAG
                 "args"    MPV_FORMAT_NODE_ARRAY
                     MPV_FORMAT_NODE_MAP
-                        "name"     MPV_FORMAT_STRING
-                        "type"     MPV_FORMAT_STRING
-                        "optional" MPV_FORMAT_FLAG
+                        "name"           MPV_FORMAT_STRING
+                        "type"           MPV_FORMAT_STRING
+                        "optional"       MPV_FORMAT_FLAG
+                        "default-value"  MPV_FORMAT_NODE (optional, value of "type")
+                        "choices"        MPV_FORMAT_NODE_ARRAY (optional)
+                            MPV_FORMAT_STRING
 
 ``input-bindings``
     The list of current input key bindings. This returns an array of maps,

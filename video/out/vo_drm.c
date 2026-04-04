@@ -75,10 +75,7 @@ static void destroy_framebuffer(int fd, struct framebuffer *fb)
         drmModeRmFB(fd, fb->id);
     }
     if (fb->handle) {
-        struct drm_mode_destroy_dumb dreq = {
-            .handle = fb->handle,
-        };
-        drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &dreq);
+        drmModeDestroyDumbBuffer(fd, fb->handle);
     }
 }
 
@@ -91,23 +88,12 @@ static struct framebuffer *setup_framebuffer(struct vo *vo)
     fb->width = drm->mode.mode.hdisplay;
     fb->height = drm->mode.mode.vdisplay;
     fb->fd = drm->fd;
-    fb->handle = 0;
 
-    // create dumb buffer
-    struct drm_mode_create_dumb creq = {
-        .width = fb->width,
-        .height = fb->height,
-        .bpp = BITS_PER_PIXEL,
-    };
-
-    if (drmIoctl(drm->fd, DRM_IOCTL_MODE_CREATE_DUMB, &creq) < 0) {
+    if (drmModeCreateDumbBuffer(drm->fd, fb->width, fb->height, BITS_PER_PIXEL, 0,
+                                &fb->handle, &fb->stride, &fb->size) < 0) {
         MP_ERR(vo, "Cannot create dumb buffer: %s\n", mp_strerror(errno));
         goto err;
     }
-
-    fb->stride = creq.pitch;
-    fb->size = creq.size;
-    fb->handle = creq.handle;
 
     // select format
     switch (drm->opts->drm_format) {
@@ -150,17 +136,15 @@ static struct framebuffer *setup_framebuffer(struct vo *vo)
     }
 
     // prepare buffer for memory mapping
-    struct drm_mode_map_dumb mreq = {
-        .handle = fb->handle,
-    };
-    if (drmIoctl(drm->fd, DRM_IOCTL_MODE_MAP_DUMB, &mreq)) {
+    uint64_t offset = 0;
+    if (drmModeMapDumbBuffer(drm->fd, fb->handle, &offset)) {
         MP_ERR(vo, "Cannot map dumb buffer: %s\n", mp_strerror(errno));
         goto err;
     }
 
     // perform actual memory mapping
     fb->map = mmap(0, fb->size, PROT_READ | PROT_WRITE, MAP_SHARED,
-                    drm->fd, mreq.offset);
+                    drm->fd, offset);
     if (fb->map == MAP_FAILED) {
         MP_ERR(vo, "Cannot map dumb buffer: %s\n", mp_strerror(errno));
         goto err;

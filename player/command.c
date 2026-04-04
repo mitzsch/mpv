@@ -544,6 +544,38 @@ static int mp_property_filename(void *ctx, struct m_property *prop,
     return r;
 }
 
+static int mp_property_env(void *ctx, struct m_property *prop,
+                           int action, void *arg)
+{
+    switch (action) {
+    case M_PROPERTY_GET_TYPE:
+        *(struct m_option *)arg = (struct m_option){.type = CONF_TYPE_NODE};
+        return M_PROPERTY_OK;
+    case M_PROPERTY_GET:
+    case M_PROPERTY_GET_NODE: {
+        struct mpv_node node;
+        node_init(&node, MPV_FORMAT_NODE_MAP, NULL);
+        for (char **env = environ; env && *env; env++) {
+            char *sep = strchr(*env, '=');
+            if (!sep)
+                continue;
+            bstr key = { .start = *env, .len = sep - *env };
+            struct mpv_node *np = node_map_badd(&node, key, MPV_FORMAT_NONE);
+            np->format = MPV_FORMAT_STRING;
+            np->u.string = talloc_strdup(node.u.list, sep + 1);
+        }
+        *(struct mpv_node *)arg = node;
+        return M_PROPERTY_OK;
+    }
+    case M_PROPERTY_KEY_ACTION: {
+        struct m_property_action_arg *ka = arg;
+        char *val = getenv(ka->key);
+        return m_property_strdup_ro(ka->action, ka->arg, val);
+    }
+    }
+    return M_PROPERTY_NOT_IMPLEMENTED;
+}
+
 static int mp_property_stream_open_filename(void *ctx, struct m_property *prop,
                                             int action, void *arg)
 {
@@ -818,13 +850,6 @@ static int mp_property_percent_pos(void *ctx, struct m_property *prop,
     }
     }
     return M_PROPERTY_NOT_IMPLEMENTED;
-}
-
-static int mp_property_time_start(void *ctx, struct m_property *prop,
-                                  int action, void *arg)
-{
-    // minor backwards-compat.
-    return property_time(action, arg, 0);
 }
 
 /// Current position in seconds (RW)
@@ -4003,6 +4028,29 @@ static int mp_property_commands(void *ctx, struct m_property *prop,
                 node_map_add_string(ae, "name", a->name);
                 node_map_add_string(ae, "type", a->type->name);
                 node_map_add_flag(ae, "optional", a->flags & MP_CMD_OPT_ARG);
+                if (a->type == &m_option_type_choice ||
+                    a->type == &m_option_type_flags) {
+                    const struct m_opt_choice_alternatives *alt = a->priv;
+                    if (alt) {
+                        if (a->defval) {
+                            const int ival = *(const int *)a->defval;
+                            const char *val = m_opt_choice_str_def(alt, ival, NULL);
+                            if (val)
+                                node_map_add_string(ae, "default-value", val);
+                        }
+                        struct mpv_node *choices =
+                            node_map_add(ae, "choices", MPV_FORMAT_NODE_ARRAY);
+                        for (int j = 0; alt[j].name; j++) {
+                           struct mpv_node *ce = node_array_add(choices, MPV_FORMAT_NONE);
+                           ce->format = MPV_FORMAT_STRING;
+                           ce->u.string = talloc_strdup(choices->u.list, alt[j].name);
+                        }
+                    }
+                } else if (a->defval) {
+                    struct mpv_node *def =
+                        node_map_add(ae, "default-value", MPV_FORMAT_NONE);
+                    m_option_get_node(a, ae->u.list, def, (void *)a->defval);
+                }
             }
 
             node_map_add_flag(entry, "vararg", cmd->vararg);
@@ -4380,6 +4428,7 @@ static const struct m_property mp_properties_base[] = {
     {"video-speed-correction", mp_property_av_speed_correction, .priv = "v"},
     {"display-sync-active", mp_property_display_sync_active},
     {"filename", mp_property_filename},
+    {"env", mp_property_env},
     {"stream-open-filename", mp_property_stream_open_filename},
     {"file-size", mp_property_file_size},
     {"path", mp_property_path},
@@ -4400,7 +4449,6 @@ static const struct m_property mp_properties_base[] = {
     {"frame-drop-count", mp_property_frame_drop_vo},
     {"vo-delayed-frame-count", mp_property_vo_delayed_frame_count},
     {"percent-pos", mp_property_percent_pos},
-    {"time-start", mp_property_time_start},
     {"time-pos", mp_property_time_pos},
     {"time-remaining", mp_property_remaining},
     {"audio-pts", mp_property_audio_pts},
@@ -7155,7 +7203,7 @@ static void cmd_update_clipboard(void *p)
 {
     struct mp_cmd_ctx *cmd = p;
     struct MPContext *mpctx = cmd->mpctx;
-    struct clipboard_access_params params = {.type = cmd->args[0].v.i};
+    struct clipboard_access_params params = {.target = cmd->args[0].v.i};
     double timeout = cmd->args[1].v.i / 1000.0;
     bool success = false;
 
