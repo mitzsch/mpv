@@ -205,6 +205,7 @@ struct input_opts {
     bool builtin_dragging;
     bool enable_mouse_movements;
     bool vo_key_input;
+    bool vo_cursor_input;
     bool test;
     bool allow_win_drag;
     bool preprocess_wheel;
@@ -229,6 +230,7 @@ const struct m_sub_options input_config = {
         {"input-key-fifo-size", OPT_INT(key_fifo_size), M_RANGE(2, 65000)},
         {"input-cursor", OPT_BOOL(enable_mouse_movements)},
         {"input-vo-keyboard", OPT_BOOL(vo_key_input)},
+        {"input-vo-cursor", OPT_BOOL(vo_cursor_input)},
         {"input-media-keys", OPT_BOOL(use_media_keys)},
         {"input-preprocess-wheel", OPT_BOOL(preprocess_wheel)},
         {"input-touch-emulate-mouse", OPT_BOOL(touch_emulate_mouse)},
@@ -254,6 +256,7 @@ const struct m_sub_options input_config = {
         .builtin_bindings = true,
         .builtin_dragging = true,
         .vo_key_input = true,
+        .vo_cursor_input = true,
         .allow_win_drag = true,
         .preprocess_wheel = true,
         .touch_emulate_mouse = true,
@@ -900,6 +903,14 @@ bool mp_input_vo_keyboard_enabled(struct input_ctx *ictx)
 {
     input_lock(ictx);
     bool r = ictx->opts->vo_key_input;
+    input_unlock(ictx);
+    return r;
+}
+
+bool mp_input_vo_cursor_enabled(struct input_ctx *ictx)
+{
+    input_lock(ictx);
+    bool r = ictx->opts->vo_cursor_input;
     input_unlock(ictx);
     return r;
 }

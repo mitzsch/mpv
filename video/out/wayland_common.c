@@ -345,7 +345,8 @@ static void pointer_handle_enter(void *data, struct wl_pointer *pointer,
     s->last_serial = serial;
 
     s->pointer_enter_serial = serial;
-    set_cursor_visibility(s, wl->cursor_visible);
+    if (mp_input_vo_cursor_enabled(wl->vo->input_ctx))
+        set_cursor_visibility(s, wl->cursor_visible);
     mp_input_put_key(wl->vo->input_ctx, MP_KEY_MOUSE_ENTER);
 
     wl->mouse_x = handle_round(wl->scaling, wl_fixed_to_int(sx));
@@ -689,7 +690,8 @@ static void tablet_tool_handle_proximity_in(void *data,
 {
     struct vo_wayland_tablet_tool *tablet_tool = data;
     tablet_tool->proximity_serial = serial;
-    set_cursor_visibility(tablet_tool->seat, true);
+    if (mp_input_vo_cursor_enabled(tablet_tool->wl->vo->input_ctx))
+        set_cursor_visibility(tablet_tool->seat, true);
     mp_input_set_tablet_tool_in_proximity(tablet_tool->wl->vo->input_ctx, true);
 }
 
@@ -4331,6 +4333,8 @@ int vo_wayland_control(struct vo *vo, int *events, int request, void *arg)
     case VOCTRL_UPDATE_WINDOW_TITLE:
         return update_window_title(wl, (const char *)arg);
     case VOCTRL_SET_CURSOR_VISIBILITY:
+        if (!mp_input_vo_cursor_enabled(wl->vo->input_ctx))
+            return VO_TRUE;
         return set_cursor_visibility_all_seats(wl, *(bool *)arg);
     case VOCTRL_KILL_SCREENSAVER:
         return set_screensaver_inhibitor(wl, true);

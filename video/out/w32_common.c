@@ -1585,7 +1585,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         // The cursor should only be hidden if the mouse is in the client area
         // and if the window isn't in menu mode (HIWORD(lParam) is non-zero)
         w32->can_set_cursor = LOWORD(lParam) == HTCLIENT && HIWORD(lParam);
-        if (w32->can_set_cursor && !w32->cursor_visible) {
+        if (mp_input_vo_cursor_enabled(w32->input_ctx) &&
+            w32->can_set_cursor && !w32->cursor_visible) {
             SetCursor(NULL);
             return TRUE;
         }
@@ -2438,6 +2439,8 @@ static int gui_thread_control(struct vo_w32_state *w32, int request, void *arg)
         return VO_TRUE;
     }
     case VOCTRL_SET_CURSOR_VISIBILITY:
+        if (!mp_input_vo_cursor_enabled(w32->input_ctx))
+            return VO_TRUE;
         w32->cursor_visible = *(bool *)arg;
 
         if (w32->can_set_cursor && w32->tracking) {
