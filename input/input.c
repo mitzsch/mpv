@@ -204,6 +204,7 @@ struct input_opts {
     bool builtin_bindings;
     bool builtin_dragging;
     bool enable_mouse_movements;
+    bool enable_keyboard;
     bool vo_key_input;
     bool vo_cursor_input;
     bool test;
@@ -229,6 +230,7 @@ const struct m_sub_options input_config = {
         {"input-right-alt-gr", OPT_BOOL(use_alt_gr)},
         {"input-key-fifo-size", OPT_INT(key_fifo_size), M_RANGE(2, 65000)},
         {"input-cursor", OPT_BOOL(enable_mouse_movements)},
+        {"input-keyboard", OPT_BOOL(enable_keyboard)},
         {"input-vo-keyboard", OPT_BOOL(vo_key_input)},
         {"input-vo-cursor", OPT_BOOL(vo_cursor_input)},
         {"input-media-keys", OPT_BOOL(use_media_keys)},
@@ -251,6 +253,7 @@ const struct m_sub_options input_config = {
         .dragging_deadzone = 3,
         .use_alt_gr = true,
         .enable_mouse_movements = true,
+        .enable_keyboard = true,
         .use_media_keys = true,
         .default_bindings = true,
         .builtin_bindings = true,
@@ -785,6 +788,8 @@ static void feed_key(struct input_ctx *ictx, int code, double scale,
         return;
     }
     if (!opts->enable_mouse_movements && MP_KEY_IS_MOUSE(unmod) && !force_mouse)
+        return;
+    if (!opts->enable_keyboard && !MP_KEY_IS_MOUSE(unmod) && unmod != MP_INPUT_RELEASE_ALL)
         return;
     if (unmod == MP_KEY_MOUSE_LEAVE || unmod == MP_KEY_MOUSE_ENTER) {
         ictx->mouse_hover = unmod == MP_KEY_MOUSE_ENTER;
