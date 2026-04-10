@@ -1190,8 +1190,8 @@ static int get_edition_entry(int item, int action, void *arg, void *ctx)
     return m_property_read_sub(props, action, arg);
 }
 
-static int property_list_editions(void *ctx, struct m_property *prop,
-                                  int action, void *arg)
+static int mp_property_list_editions(void *ctx, struct m_property *prop,
+                                     int action, void *arg)
 {
     MPContext *mpctx = ctx;
     struct demuxer *demuxer = mpctx->demuxer;
@@ -1871,6 +1871,10 @@ static int mp_property_audio_devices(void *ctx, struct m_property *prop,
     struct command_ctx *cmd = mpctx->command_ctx;
     create_hotplug(mpctx);
 
+    int valid = m_property_read_sub_validate(ctx, prop, action, arg);
+    if (valid != M_PROPERTY_VALID)
+        return valid;
+
     struct ao_device_list *list = ao_hotplug_get_device_list(cmd->hotplug, mpctx->ao);
     return m_property_read_list(action, arg, list->num_devices,
                                 get_device_entry, list);
@@ -1918,6 +1922,11 @@ static int mp_property_audio_params(void *ctx, struct m_property *prop,
                                     int action, void *arg)
 {
     MPContext *mpctx = ctx;
+
+    int valid = m_property_read_sub_validate(ctx, prop, action, arg);
+    if (valid != M_PROPERTY_VALID)
+        return valid;
+
     return property_audiofmt(mpctx->ao_chain ?
         mpctx->ao_chain->filter->input_aformat : NULL, action, arg);
 }
@@ -1926,6 +1935,11 @@ static int mp_property_audio_out_params(void *ctx, struct m_property *prop,
                                         int action, void *arg)
 {
     MPContext *mpctx = ctx;
+
+    int valid = m_property_read_sub_validate(ctx, prop, action, arg);
+    if (valid != M_PROPERTY_VALID)
+        return valid;
+
     struct mp_aframe *frame = NULL;
     if (mpctx->ao) {
         frame = mp_aframe_create();
@@ -2619,6 +2633,11 @@ static int mp_property_vd_imgparams(void *ctx, struct m_property *prop,
     struct vo_chain *vo_c = mpctx->vo_chain;
     if (!vo_c)
         return M_PROPERTY_UNAVAILABLE;
+
+    int valid = m_property_read_sub_validate(ctx, prop, action, arg);
+    if (valid != M_PROPERTY_VALID)
+        return valid;
+
     struct track *track = mpctx->current_track[0][STREAM_VIDEO];
     struct mp_codec_params *c =
         track && track->stream ? track->stream->codec : NULL;
@@ -3034,6 +3053,11 @@ static int mp_property_osd_dim(void *ctx, struct m_property *prop,
                                int action, void *arg)
 {
     MPContext *mpctx = ctx;
+
+    int valid = m_property_read_sub_validate(ctx, prop, action, arg);
+    if (valid != M_PROPERTY_VALID)
+        return valid;
+
     struct mp_osd_res vo_res = osd_get_vo_res(mpctx->osd);
 
     if (!mpctx->video_out || !mpctx->video_out->config_ok)
@@ -3105,27 +3129,20 @@ static int mp_property_mouse_pos(void *ctx, struct m_property *prop,
 {
     MPContext *mpctx = ctx;
 
-    switch (action) {
-    case M_PROPERTY_GET_TYPE:
-        *(struct m_option *)arg = (struct m_option){.type = CONF_TYPE_NODE};
-        return M_PROPERTY_OK;
+    int valid = m_property_read_sub_validate(ctx, prop, action, arg);
+    if (valid != M_PROPERTY_VALID)
+        return valid;
 
-    case M_PROPERTY_GET: {
-        struct mpv_node node;
-        int x, y, hover;
-        mp_input_get_mouse_pos(mpctx->input, &x, &y, &hover);
+    int x, y, hover;
+    mp_input_get_mouse_pos(mpctx->input, &x, &y, &hover);
+    struct m_sub_property props[] = {
+        {"x",      SUB_PROP_INT64(x)},
+        {"y",      SUB_PROP_INT64(y)},
+        {"hover",  SUB_PROP_BOOL(!!hover)},
+        {0}
+    };
 
-        node_init(&node, MPV_FORMAT_NODE_MAP, NULL);
-        node_map_add_int64(&node, "x", x);
-        node_map_add_int64(&node, "y", y);
-        node_map_add_flag(&node, "hover", hover);
-        *(struct mpv_node *)arg = node;
-
-        return M_PROPERTY_OK;
-    }
-    }
-
-    return M_PROPERTY_NOT_IMPLEMENTED;
+    return m_property_read_sub(props, action, arg);
 }
 
 static int get_touch_pos(int item, int action, void *arg, void *ctx)
@@ -3147,6 +3164,11 @@ static int mp_property_touch_pos(void *ctx, struct m_property *prop,
                                  int action, void *arg)
 {
     MPContext *mpctx = ctx;
+
+    int valid = m_property_read_sub_validate(ctx, prop, action, arg);
+    if (valid != M_PROPERTY_VALID)
+        return valid;
+
     int xs[MAX_TOUCH_POINTS], ys[MAX_TOUCH_POINTS], ids[MAX_TOUCH_POINTS];
     int count = mp_input_get_touch_pos(mpctx->input, MAX_TOUCH_POINTS, xs, ys, ids);
     const int *pos[3] = {xs, ys, ids};
@@ -3172,11 +3194,11 @@ static int mp_property_tablet_pos(void *ctx, struct m_property *prop,
         bool tool_stylus_btn2_pressed;
         bool tool_stylus_btn3_pressed;
         bool pad_focus;
-        bool *pad_buttons_pressed;
+        bool pad_buttons_pressed[MP_MAX_TABLET_PAD_BUTTONS];
         int pad_buttons;
         mp_input_get_tablet_pos(mpctx->input, &xs, &ys, &tool_in_proximity, &tool_down,
             &tool_stylus_btn1_pressed, &tool_stylus_btn2_pressed, &tool_stylus_btn3_pressed,
-            &pad_focus, &pad_buttons_pressed, &pad_buttons);
+            &pad_focus, pad_buttons_pressed, &pad_buttons);
 
         struct mpv_node node;
         node_init(&node, MPV_FORMAT_NODE_MAP, NULL);
@@ -3714,6 +3736,10 @@ static int get_decoder_entry(int item, int action, void *arg, void *ctx)
 static int mp_property_decoders(void *ctx, struct m_property *prop,
                                 int action, void *arg)
 {
+    int valid = m_property_read_sub_validate(ctx, prop, action, arg);
+    if (valid != M_PROPERTY_VALID)
+        return valid;
+
     struct mp_decoder_list *codecs = talloc_zero(NULL, struct mp_decoder_list);
     struct mp_decoder_list *v = talloc_steal(codecs, video_decoder_list());
     struct mp_decoder_list *a = talloc_steal(codecs, audio_decoder_list());
@@ -3728,6 +3754,10 @@ static int mp_property_decoders(void *ctx, struct m_property *prop,
 static int mp_property_encoders(void *ctx, struct m_property *prop,
                                 int action, void *arg)
 {
+    int valid = m_property_read_sub_validate(ctx, prop, action, arg);
+    if (valid != M_PROPERTY_VALID)
+        return valid;
+
     struct mp_decoder_list *codecs = talloc_zero(NULL, struct mp_decoder_list);
     mp_add_lavc_encoders(codecs);
     int r = m_property_read_list(action, arg, codecs->num_entries,
@@ -4490,7 +4520,7 @@ static const struct m_property mp_properties_base[] = {
     {"chapter-list", mp_property_list_chapters},
     {"track-list", mp_property_list_tracks},
     {"current-tracks", mp_property_current_tracks},
-    {"edition-list", property_list_editions},
+    {"edition-list", mp_property_list_editions},
 
     {"playlist", mp_property_playlist},
     {"playlist-path", mp_property_playlist_path},

@@ -271,7 +271,7 @@ This applies to certain APIs, such as ``mp.command_native()`` (with tables that
 have string keys) in Lua scripting, or ``mpv_command_node()`` (with
 MPV_FORMAT_NODE_MAP) in the C libmpv client API.
 
-The name of the command is provided with a ``name`` string field. The name of
+The name of the command is provided with a ``_name`` string field. The name of
 each command is defined in each command description in the
 `List of Input Commands`_. ``--input-cmdlist`` also lists them. See the
 ``subprocess`` command for an example.
@@ -1355,7 +1355,7 @@ Execution Commands
         ::
 
             local r = mp.command_native({
-                name = "subprocess",
+                _name = "subprocess",
                 playback_only = false,
                 capture_stdout = true,
                 args = {"cat", "/proc/cpuinfo"},
@@ -2235,6 +2235,11 @@ Property list
 ``env``
     Read-only table of all the environment variables. A specific variable can be
     accessed as a sub-property, e.g. ``${env/HOME}`` returns ``$HOME`` if set.
+
+    .. note:: On certain platforms (e.g Windows) environment variables are case
+              insensitive and so ``${env/PATH}`` and ``${env/Path}`` will
+              resolve to the same thing. However, the returned table will
+              contain the variable name as is without any case-normalization.
 
 ``pid``
     Process-id of mpv.

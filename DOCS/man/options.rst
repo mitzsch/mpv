@@ -4375,8 +4375,8 @@ Demuxer
     This is a string list option. See `List Options`_ for details.
 
 ``--autocreate-playlist=<no|filter|same>``
-    When opening a local file, act as if the parent directory is opened and
-    create a playlist automatically.
+    When opening a local regular file, act as if the parent directory is opened
+    and create a playlist automatically.
 
     :no:     Load a single file (default).
     :filter: Create a playlist from the parent directory with files matching
@@ -4487,8 +4487,11 @@ Input
 ``--input-ipc-server=<filename>``
     Enable the IPC support and create the listening socket at the given path.
 
-    On Linux and Unix, the given path is a regular filesystem path. On Windows,
-    named pipes are used, so the path refers to the pipe namespace
+    On Linux and Unix, if the first character of the path is ``@``, then it
+    is internally replaced with a null character, which represents an abstract
+    socket address on Linux, but can have unspecified behavior on other UNIX
+    platforms. Otherwise, the given path is a regular filesystem path.
+    On Windows, named pipes are used, so the path refers to the pipe namespace
     (``\\.\pipe\<name>``). If the ``\\.\pipe\`` prefix is missing, mpv will add
     it automatically before creating the pipe, so
     ``--input-ipc-server=/tmp/mpv-socket`` and
@@ -5022,6 +5025,12 @@ Screenshot
         the result of passing "%X" to ``strftime``. For example, ``%tm`` will
         insert the number of the current month as number. You have to use
         multiple ``%tX`` specifiers to build a full date/time string.
+
+        .. note::
+
+            Since mpv 0.42.0, this only supports the ``strftime`` format
+            specifiers specified in C11 standard, or the ``%s`` extension for
+            UNIX timestamp. Other format specifiers are unsupported.
     ``%{prop[:fallback text]}``
         Insert the value of the input property 'prop'. E.g. ``%{filename}`` is
         the same as ``%f``. If the property does not exist or is not available,

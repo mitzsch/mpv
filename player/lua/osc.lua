@@ -1327,11 +1327,11 @@ local function window_controls(topbar)
 
     local button_y = wc_geo.y - (wc_geo.h / 2)
     local first_geo =
-        {x = controlbox_left + 5, y = button_y, an = 4, w = 25, h = 25}
+        {x = controlbox_left + 5, y = button_y, an = 4, w = 25, h = wc_geo.h}
     local second_geo =
-        {x = controlbox_left + 30, y = button_y, an = 4, w = 25, h = 25}
+        {x = controlbox_left + 30, y = button_y, an = 4, w = 25, h = wc_geo.h}
     local third_geo =
-        {x = controlbox_left + 55, y = button_y, an = 4, w = 25, h = 25}
+        {x = controlbox_left + 55, y = button_y, an = 4, w = 25, h = wc_geo.h}
 
     -- Window control buttons use symbols in the custom mpv osd font
     -- because the official unicode codepoints are sufficiently
@@ -1719,7 +1719,6 @@ local function bar_layout(direction, slim)
     }
 
     local padX = 9
-    local padY = 3
     local buttonW = 27
     local tcW = (state.tc_ms) and 170 or 110
     if user_opts.tcspace >= 50 and user_opts.tcspace <= 200 then
@@ -1761,8 +1760,8 @@ local function bar_layout(direction, slim)
         osc_param.video_margins.t = osc_geo.h / osc_param.playresy
     end
 
-    local line1 = osc_geo.y - direction * (9 + padY)
-    local line2 = osc_geo.y - direction * (36 + padY)
+    local line1 = osc_geo.y - direction * 12
+    local line2 = osc_geo.y - direction * 39
 
     osc_param.areas = {}
 
@@ -1795,7 +1794,7 @@ local function bar_layout(direction, slim)
 
 
     -- Menu
-    geo = { x = osc_geo.x + padX + 4, y = line1, an = 4, w = 18, h = 18 - padY }
+    geo = { x = osc_geo.x + padX + 4, y = line1, an = 4, w = 18, h = math.abs(line2 - line1) }
     lo = add_layout("menu")
     lo.geometry = geo
     lo.style = osc_styles.topButtonsBar
@@ -1858,7 +1857,7 @@ local function bar_layout(direction, slim)
 
     -- Playback control buttons
     geo = { x = osc_geo.x + padX + padwc_l, y = line2, an = 4,
-            w = buttonW, h = 36 - padY*2}
+            w = buttonW, h = osc_geo.h - math.abs(line2 - line1)}
     lo = add_layout("play_pause")
     lo.geometry = geo
     lo.style = osc_styles.smallButtonsBar

@@ -1879,7 +1879,6 @@ static void handle_toplevel_config(void *data, struct xdg_toplevel *toplevel,
     wl->tiled = is_tiled;
 
     wl->locked_size = is_fullscreen || is_maximized || is_tiled;
-    wl->reconfigured = false;
 
     if (wl->requested_decoration)
         request_decoration_mode(wl, wl->requested_decoration);
@@ -1927,17 +1926,17 @@ static void handle_toplevel_config(void *data, struct xdg_toplevel *toplevel,
     wl->surface_local.x1 = width;
     wl->surface_local.y1 = height;
 
-    if (mp_rect_equals(&old_geometry, &wl->geometry))
-        return;
-
 resize:
-    MP_VERBOSE(wl, "Resizing due to xdg from %ix%i to %ix%i\n",
-               mp_rect_w(old_geometry), mp_rect_h(old_geometry),
-               mp_rect_w(wl->geometry), mp_rect_h(wl->geometry));
+    if (!mp_rect_equals(&old_geometry, &wl->geometry)) {
+        MP_VERBOSE(wl, "Resizing due to xdg from %ix%i to %ix%i\n",
+                   mp_rect_w(old_geometry), mp_rect_h(old_geometry),
+                   mp_rect_w(wl->geometry), mp_rect_h(wl->geometry));
+        wl->pending_vo_events |= VO_EVENT_RESIZE;
+    }
 
-    wl->pending_vo_events |= VO_EVENT_RESIZE;
-    wl->override_surface_local = width == 0 || height == 0;
+    wl->override_surface_local = width == 0 || height == 0 || wl->reconfigured;
     wl->toplevel_configured = true;
+    wl->reconfigured = false;
 }
 
 static void handle_toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel)
@@ -2116,6 +2115,33 @@ static void supported_primaries_named(void *data, struct wp_color_manager_v1 *co
     wl->primaries_map[pl_primaries] = primaries;
 }
 
+static enum pl_color_primaries get_best_supported_prim_container(const int primaries_map[PL_COLOR_PRIM_COUNT],
+                                                                  const struct pl_raw_primaries *gamut)
+{
+    enum pl_color_primaries container = PL_COLOR_PRIM_UNKNOWN;
+    enum pl_color_primaries widest = PL_COLOR_PRIM_UNKNOWN;
+    const struct pl_raw_primaries *best = NULL;
+    const struct pl_raw_primaries *widest_raw = NULL;
+    for (enum pl_color_primaries prim = 1; prim < PL_COLOR_PRIM_COUNT; prim++) {
+        if (!primaries_map[prim])
+            continue;
+        const struct pl_raw_primaries *raw = pl_raw_primaries_get(prim);
+        if (pl_raw_primaries_similar(raw, gamut))
+            return prim;
+        if (pl_primaries_superset(raw, gamut) &&
+            (!best || pl_primaries_superset(best, raw)))
+        {
+            container = prim;
+            best = raw;
+        }
+        if (!widest_raw || pl_primaries_superset(raw, widest_raw)) {
+            widest = prim;
+            widest_raw = raw;
+        }
+    }
+    return container != PL_COLOR_PRIM_UNKNOWN ? container : widest;
+}
+
 static void color_manager_done(void *data, struct wp_color_manager_v1 *color_manager)
 {
 }
@@ -2184,7 +2210,7 @@ static void info_done(void *data, struct wp_image_description_info_v1 *image_des
     MP_VERBOSE(wl, "Preferred surface feedback received:\n");
     log_color_space(wl->log, wd);
     if (!wd->csp.primaries) {
-        wd->csp.primaries = mp_get_best_prim_container(&wd->raw_prim);
+        wd->csp.primaries = get_best_supported_prim_container(wl->primaries_map, &wd->raw_prim);
         MP_VERBOSE(wl, "Setting best primary container from raw primaries: %s\n",
                    m_opt_choice_str(pl_csp_prim_names, wd->csp.primaries));
     }
@@ -3833,6 +3859,7 @@ static void set_geometry(struct vo_wayland_state *wl, bool resize)
     if (resize) {
         if (!wl->locked_size)
             wl->geometry = wl->window_size;
+        wl->reconfigured = true;
         wl->override_surface_local = true;
         wl->pending_vo_events |= VO_EVENT_RESIZE;
     }
@@ -4233,6 +4260,8 @@ int vo_wayland_control(struct vo *vo, int *events, int request, void *arg)
         wl->window_size.y0 = 0;
         wl->window_size.x1 = s[0];
         wl->window_size.y1 = s[1];
+        wl->reconfigured = true;
+        wl->override_surface_local = true;
         if (!wl->opts->fullscreen && !wl->tiled) {
             if (wl->opts->window_maximized) {
                 xdg_toplevel_unset_maximized(wl->xdg_toplevel);
@@ -4242,7 +4271,6 @@ int vo_wayland_control(struct vo *vo, int *events, int request, void *arg)
                     return VO_TRUE;
             }
             wl->geometry = wl->window_size;
-            wl->override_surface_local = true;
             wl->pending_vo_events |= VO_EVENT_RESIZE;
         }
         return VO_TRUE;
