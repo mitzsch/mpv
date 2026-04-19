@@ -1334,8 +1334,8 @@ Video
         - If you're not sure, but want hardware decoding always enabled by
           default, put ``hwdec=yes`` into your ``mpv.conf``, and acknowledge that
           this may cause problems.
-        - If you want to test available hardware decoding methods, pass
-          ``--hwdec=auto --hwdec-codecs=all`` and look at the terminal output.
+        - If you want to test all available hardware decoding methods, pass
+          ``--hwdec=auto-unsafe --hwdec-codecs=all`` and look at the terminal output.
         - If you're a developer, or want to perform elaborate tests, you may
           need any of the other possible option values.
 
@@ -2791,10 +2791,12 @@ Subtitles
     canvas size. Can be useful to test broken subtitles, which often happen
     when the video was transcoded, while attempting to keep the old subtitles.
 
-``--image-subs-hdr-peak=<sdr|video|10-10000>``
+``--image-subs-hdr-peak=<sdr|video|video-static|video-dynamic|10-10000>``
     Controls the image subtitle diffuse white level in cd/m² (nits) for HDR
-    output (default: sdr). ``sdr`` is 203 cd/m² for standard SDR white, while
-    ``video`` uses video metadata. (``--vo=gpu-next`` only)
+    videos (default: 1000). ``sdr`` is 203 cd/m² for standard SDR white,
+    ``video`` uses all video metadata including peak detection,
+    ``video-dynamic`` uses only per-scene video metadata,
+    ``video-static`` uses only static video metadata, (``--vo=gpu-next`` only)
 
     This also affects image subtitle brightness in HDR tone mapping with
     ``--blend-subtitles=<yes|video>``.
@@ -6400,8 +6402,8 @@ them.
         ...
 
     Each section of metadata, along with the non-metadata lines after it,
-    defines a single block. There are currently two types of blocks, HOOKs and
-    TEXTUREs.
+    defines a single block. There are currently three types of blocks, HOOKs,
+    TEXTUREs, and PARAMs.
 
     A ``TEXTURE`` block can set the following options:
 
@@ -6435,6 +6437,45 @@ them.
     Following the metadata is a string of bytes in hexadecimal notation that
     define the raw texture data, corresponding to the format specified by
     `FORMAT`, on a single line with no extra whitespace.
+
+    A ``PARAM`` block can set the following options:
+
+    PARAM <name> (required)
+        Starts a parameter block that defines a tunable shader parameter.
+        Parameters are global across the entire shader file, all hooks in the
+        file can reference them, regardless of declaration order.
+
+    TYPE [ENUM] <DEFINE | <type>> (required)
+        The parameter type. Supported types are ``float`` and ``int``.
+
+        The special type ``DEFINE`` emits a preprocessor define which can be
+        used inside ``#if`` directives.
+
+        If the ``ENUM`` qualifier is used then the type must be either
+        ``DEFINE`` or ``int``. Instead of accepting a default value, ``ENUM``
+        qualified parameter body lists all the possible enumeration values
+        separated by newlines. These values are assigned integer values starting
+        from 0 incremented by 1. Each enumeration will also be emitted as a
+        preprocessor define. ``MINIMUM`` and ``MAXIMUM`` are ignored.
+
+    MINIMUM <value>
+        Minimum allowed value for this parameter.
+
+    MAXIMUM <value>
+        Maximum allowed value for this parameter.
+
+    DESC <text>
+        Human-readable description of the parameter.
+
+    The initial/default value of the parameter is the first non-metadata line
+    after the parameter headers.
+
+    .. note::
+        ``vo=gpu`` supports only a subset of the parameter features available in
+        ``vo=gpu-next``. See libplacebo documentation for more detailed
+        information about PARAM features supported in ``vo=gpu-next``. Notably
+        ``uint``, ``DYNAMIC``, and ``CONSTANT`` types are not available, and
+        parameters cannot be referenced in ``WHEN`` expression.
 
     A ``HOOK`` block can set the following options:
 
@@ -6629,7 +6670,7 @@ them.
     specific named shaders by prefixing the shader name with a ``/``, e.g.
     ``shader/param=value``. Without a prefix, parameters affect all shaders.
     The shader name is the base part of the shader filename, without the
-    extension. (``--vo=gpu-next`` only)
+    extension.
 
     Some parameters are filled automatically if the shader requests them.
     Currently following parameters are available:

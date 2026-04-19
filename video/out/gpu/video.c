@@ -1590,7 +1590,8 @@ static struct ra_tex **next_hook_tex(struct gl_video *p)
 // Process hooks for a plane, saving the result and returning a new image
 // If 'trans' is NULL, the shader is forbidden from transforming img
 static struct image pass_hook(struct gl_video *p, const char *name,
-                              struct image img, struct gl_transform *trans)
+                              struct image img, struct gl_transform *trans,
+                              int max_output_components)
 {
     if (!name)
         return img;
@@ -1618,6 +1619,14 @@ found:
 
         const char *store_name = hook->save_tex ? hook->save_tex : name;
         bool is_overwrite = strcmp(store_name, name) == 0;
+        int comps = hook->components ? hook->components : img.components;
+
+        if (is_overwrite && comps > max_output_components) {
+            MP_ERR(p, "Hook tried to overwrite %s COMPONENTS to "
+                   "unsupported value: %d (max supported: %d)\n",
+                   name, comps, max_output_components);
+            continue;
+        }
 
         // If user shader is set to align HOOKED with reference and fix its
         // offset, it requires HOOKED to be resizable and overwritten.
@@ -1643,7 +1652,6 @@ found:
         struct gl_transform hook_off = identity_trans;
         hook->hook(p, img, &hook_off, hook->priv);
 
-        int comps = hook->components ? hook->components : img.components;
         skip_unused(p, comps);
 
         // Compute the updated FBO dimensions and store the result
@@ -1718,7 +1726,7 @@ found: ;
     struct ra_tex **tex = next_hook_tex(p);
     finish_pass_tex(p, tex, p->texture_w, p->texture_h);
     struct image img = image_wrap(*tex, PLANE_RGB, p->components);
-    img = pass_hook(p, name, img, tex_trans);
+    img = pass_hook(p, name, img, tex_trans, 4);
     copy_image(p, &(int){0}, img);
     p->texture_w = img.w;
     p->texture_h = img.h;
@@ -2114,11 +2122,75 @@ static bool user_hook_cond(struct gl_video *p, struct image img, void *priv)
     return res;
 }
 
+static void update_user_shader_opts(struct gl_video *p, const char *path,
+                                    struct gl_user_shader_hook *shader)
+{
+    for (int i = 0; i < shader->num_params; i++)
+        shader->params[i].value = shader->params[i].initial;
+
+    if (!p->opts.user_shader_opts)
+        return;
+
+    const char *basename = mp_basename(path);
+    struct bstr shadername;
+    if (!mp_splitext(basename, &shadername))
+        shadername = bstr0(basename);
+
+    for (int n = 0; p->opts.user_shader_opts[n * 2]; n++) {
+        struct bstr key = bstr0(p->opts.user_shader_opts[n * 2 + 0]);
+        struct bstr val = bstr0(p->opts.user_shader_opts[n * 2 + 1]);
+
+        int pos = bstrchr(key, '/');
+        if (pos >= 0) {
+            if (!bstr_equals(bstr_splice(key, 0, pos), shadername))
+                continue;
+            key = bstr_cut(key, pos + 1);
+        }
+
+        for (int i = 0; i < shader->num_params; i++) {
+            struct gl_user_shader_param *param = &shader->params[i];
+            if (!bstr_equals(key, param->name))
+                continue;
+            parse_shader_param_value(p->log, param, val, &param->value);
+        }
+    }
+}
+
 static void user_hook(struct gl_video *p, struct image img,
                       struct gl_transform *trans, void *priv)
 {
     struct gl_user_shader_hook *shader = priv;
     mp_assert(shader);
+
+    for (int i = 0; i < shader->num_params; i++) {
+        const struct gl_user_shader_param *param = &shader->params[i];
+
+        struct bstr enum_rest = param->enum_body;
+        int idx = 0;
+        while (enum_rest.len > 0) {
+            struct bstr enum_line = bstr_strip(bstr_getline(enum_rest, &enum_rest));
+            if (enum_line.len == 0)
+                continue;
+            GLSLHF("#define %.*s %d\n", BSTR_P(enum_line), idx);
+            idx++;
+        }
+
+        double value = param->value;
+        gpu_get_auto_param(p->image.mpi, param->name, &value);
+
+        switch (param->type) {
+        case GL_USER_SHADER_PARAM_FLOAT:
+            gl_sc_uniform_f_bstr(p->sc, param->name, value);
+            break;
+        case GL_USER_SHADER_PARAM_INT:
+            gl_sc_uniform_i_bstr(p->sc, param->name, lrint(value));
+            break;
+        case GL_USER_SHADER_PARAM_DEFINE:
+            GLSLHF("#define %.*s %d\n", BSTR_P(param->name), (int)lrint(value));
+            break;
+        }
+    }
+
     load_shader(p, shader->pass_body);
 
     pass_describe(p, "user shader: %.*s (%s)", BSTR_P(shader->pass_desc),
@@ -2142,10 +2214,12 @@ static void user_hook(struct gl_video *p, struct image img,
     gl_transform_trans(shader->offset, trans);
 }
 
-static bool add_user_hook(void *priv, const struct gl_user_shader_hook *hook)
+static bool add_user_hook(void *priv, const char *path,
+                          const struct gl_user_shader_hook *hook)
 {
     struct gl_video *p = priv;
     struct gl_user_shader_hook *copy = talloc_dup(p, (struct gl_user_shader_hook *)hook);
+    update_user_shader_opts(p, path, copy);
     struct tex_hook texhook = {
         .save_tex = bstrdup0(copy, copy->save_tex),
         .components = copy->components,
@@ -2185,7 +2259,7 @@ static void load_user_shaders(struct gl_video *p, char **shaders)
 
     for (int n = 0; shaders[n] != NULL; n++) {
         struct bstr file = load_cached_file(p, shaders[n]);
-        parse_user_shader(p->log, p->ra, file, p, add_user_hook, add_user_tex);
+        parse_user_shader(p->log, p->ra, file, shaders[n], p, add_user_hook, add_user_tex);
     }
 }
 
@@ -2297,7 +2371,7 @@ static void pass_read_video(struct gl_video *p)
         default: continue;
         }
 
-        img[n] = pass_hook(p, name, img[n], &offsets[n]);
+        img[n] = pass_hook(p, name, img[n], &offsets[n], img[n].components);
 
         if (reference_tex_num == n) {
             // The reference texture is finalized now.
@@ -2417,7 +2491,7 @@ static void pass_read_video(struct gl_video *p)
         }
 
         // Run any post-scaling hooks
-        img[n] = pass_hook(p, name, img[n], NULL);
+        img[n] = pass_hook(p, name, img[n], NULL, img[n].components);
     }
 
     // All planes are of the same size and properly aligned at this point
@@ -3039,13 +3113,8 @@ static void pass_draw_osd(struct gl_video *p, int osd_flags, int frame_flags,
         // When subtitles need to be color managed, assume they're in sRGB
         // (for lack of anything saner to do)
         if (cms) {
-            static const struct pl_color_space csp_srgb = {
-                .primaries = PL_COLOR_PRIM_BT_709,
-                .transfer = PL_COLOR_TRC_SRGB,
-            };
-
-            pass_colormanage(p, csp_srgb, MP_CSP_LIGHT_DISPLAY, &fbo->color_space,
-                             frame_flags, true);
+            pass_colormanage(p, pl_color_space_srgb, MP_CSP_LIGHT_DISPLAY,
+                             &fbo->color_space, frame_flags, true);
         }
         mpgl_osd_draw_finish(p->osd, n, p->sc, fbo);
     }

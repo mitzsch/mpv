@@ -2869,7 +2869,7 @@ static int decode_float(char *str, float *out)
     float dec_val;
 
     dec_val = strtod(str, &rest);
-    if (!rest || (rest == str) || !isfinite(dec_val))
+    if (rest == str || !isfinite(dec_val))
         return -1;
 
     *out = dec_val;
@@ -2991,6 +2991,7 @@ static void demux_copy(struct demuxer *dst, struct demuxer *src)
     dst->editions = src->editions;
     dst->num_editions = src->num_editions;
     dst->edition = src->edition;
+    dst->edition_is_track_mapping = src->edition_is_track_mapping;
     dst->attachments = src->attachments;
     dst->num_attachments = src->num_attachments;
     dst->matroska_data = src->matroska_data;
