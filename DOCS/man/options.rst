@@ -926,7 +926,7 @@ Program Behavior
 
     ``all_formats=<yes|no>``
         If 'yes' will attempt to add all formats found reported by youtube-dl
-        (default: no). Each format is added as a separate track. In addition,
+        (default: yes). Each format is added as a separate track. In addition,
         they are delay-loaded, and actually opened only when a track is selected
         (this should keep load times as low as without this option).
 
@@ -938,11 +938,6 @@ Program Behavior
         Tracks which represent formats that were selected by youtube-dl as
         default will have the default flag set. This means mpv should generally
         still select formats chosen with ``--ytdl-format`` by default.
-
-        Although this mechanism makes it possible to switch streams at runtime,
-        it's not suitable for this purpose for various technical reasons. (It's
-        slow, which can't be really fixed.) In general, this option is not
-        useful, and was only added to show that it's possible.
 
         There are two cases that must be considered when doing quality/bandwidth
         selection:
@@ -6356,6 +6351,11 @@ them.
     frame presentation if it is supported by the compositor (default: ``yes``).
     This only has an effect if ``--video-sync=display-...`` is being used.
 
+``--wayland-session=<string>``
+    Set the wayland session name for window restoration (default: unset).
+    Not setting this or setting it to the empty string disables session
+    management.
+
 ``--spirv-compiler=<compiler>``
     Controls which compiler is used to translate GLSL to SPIR-V. This is
     only relevant for ``--gpu-api=d3d11`` with ``--vo=gpu``.
@@ -6456,7 +6456,8 @@ them.
         qualified parameter body lists all the possible enumeration values
         separated by newlines. These values are assigned integer values starting
         from 0 incremented by 1. Each enumeration will also be emitted as a
-        preprocessor define. ``MINIMUM`` and ``MAXIMUM`` are ignored.
+        preprocessor define and will be accessible within RPN expressions.
+        ``MINIMUM`` and ``MAXIMUM`` are ignored.
 
     MINIMUM <value>
         Minimum allowed value for this parameter.
@@ -6474,8 +6475,7 @@ them.
         ``vo=gpu`` supports only a subset of the parameter features available in
         ``vo=gpu-next``. See libplacebo documentation for more detailed
         information about PARAM features supported in ``vo=gpu-next``. Notably
-        ``uint``, ``DYNAMIC``, and ``CONSTANT`` types are not available, and
-        parameters cannot be referenced in ``WHEN`` expression.
+        ``uint``, ``DYNAMIC``, and ``CONSTANT`` types are not available.
 
     A ``HOOK`` block can set the following options:
 
@@ -6504,11 +6504,11 @@ them.
     WIDTH <szexpr>, HEIGHT <szexpr>
         Specifies the size of the resulting texture for this pass. ``szexpr``
         refers to an expression in RPN (reverse polish notation), using the
-        operators + - * / > < !, floating point literals, and references to
+        operators + - * / > < ! = %, floating point literals, and references to
         sizes of existing texture (such as MAIN.width or CHROMA.height),
-        OUTPUT, or NATIVE_CROPPED (size of an input texture cropped after
-        pan-and-scan, video-align-x/y, video-pan-x/y, etc. and possibly
-        prescaled). By default, these are set to HOOKED.w and HOOKED.h,
+        OUTPUT, tunable parameters, or NATIVE_CROPPED (size of an input texture
+        cropped after pan-and-scan, video-align-x/y, video-pan-x/y, etc. and
+        possibly prescaled). By default, these are set to HOOKED.w and HOOKED.h,
         espectively.
 
     WHEN <szexpr>

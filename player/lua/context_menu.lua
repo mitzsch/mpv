@@ -15,6 +15,7 @@ You should have received a copy of the GNU Lesser General Public
 License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
 ]]
 
+local utils = require "mp.utils"
 local assdraw = require "mp.assdraw"
 
 local options = {
@@ -24,6 +25,7 @@ local options = {
     padding_y = 4,
     menu_outline_size = 0,
     menu_outline_color = "#FFFFFF",
+    background_alpha = 0,
     corner_radius = 5,
     scale_with_window = "auto",
     focused_color = "#222222",
@@ -157,9 +159,12 @@ local function calculate_width(menu_items, osd_w, osd_h, checkbox)
     end
 
     local longest = ""
+    local longest_width = 0
     for _, title in pairs(titles) do
-        if #title > #longest then
+        local title_width = utils.terminal_display_width(title)
+        if title_width > longest_width then
             longest = title
+            longest_width = title_width
         end
     end
 
@@ -411,7 +416,8 @@ local function render()
         back_color = "222222"
     end
 
-    local background_style = "{\\1c&H" .. back_color .. "&" ..
+    local background_style = "{\\1c&H" .. back_color ..
+                       "&\\1a&H" .. string.format("%x", options.background_alpha) ..
                        "&\\bord" .. options.menu_outline_size .. "\\3c&H" ..
                        color_option_to_ass(options.menu_outline_color) ..
                        "\\blur0&}"

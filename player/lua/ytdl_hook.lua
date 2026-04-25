@@ -7,7 +7,7 @@ local o = {
     include = "^%w+%.youtube%.com/|^youtube%.com/|^youtu%.be/|^%w+%.twitch%.tv/|^twitch%.tv/",
     try_ytdl_first = false,
     use_manifests = false,
-    all_formats = false,
+    all_formats = true,
     force_all_formats = true,
     thumbnails = "none",
     ytdl_path = "",
@@ -26,6 +26,7 @@ options.read_options(o, nil, function()
 end)
 
 local chapter_list = {}
+local metadata = {}
 local playlist_cookies = {}
 local playlist_metadata = {}
 
@@ -62,7 +63,6 @@ local tag_list = {
     ["is_live"]         = "ytdl_is_live",
     ["release_year"]    = "ytdl_release_year",
     ["description"]     = "ytdl_description",
-    -- "title" is handled by force-media-title
 }
 
 local safe_protos = Set {
@@ -677,6 +677,12 @@ local function add_single_video(json)
         elseif json.tbr then
             max_bitrate = json.tbr > max_bitrate and json.tbr or max_bitrate
         end
+
+        for json_name, mp_name in pairs(tag_list) do
+            if json[json_name] then
+                metadata[mp_name] = json[json_name]
+            end
+        end
     end
 
     if streamurl == ""  then
@@ -1167,8 +1173,7 @@ local function run_ytdl_hook(url)
 
     else -- probably a video
         -- add playlist metadata if any belongs to the current video
-        local metadata = playlist_metadata[mp.get_property("playlist-path")] or {}
-        for key, value in pairs(metadata) do
+        for key, value in pairs(playlist_metadata[mp.get_property("playlist-path")] or {}) do
             json[key] = value
         end
 
@@ -1208,6 +1213,11 @@ mp.add_hook("on_preloaded", 10, function ()
         mp.set_property_native("chapter-list", chapter_list)
         chapter_list = {}
     end
+
+    for key, value in pairs(metadata) do
+        mp.set_property("metadata/by-key/" .. key, value)
+    end
+    metadata = {}
 end)
 
 mp.add_hook("on_after_end_file", 50, function ()
