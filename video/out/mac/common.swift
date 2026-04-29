@@ -369,6 +369,7 @@ class Common: NSObject {
     }
 
     func setCursorVisibility(_ visible: Bool) {
+        if let input = input, !mp_input_vo_cursor_enabled(input.getInputCtx()) { return }
         NSCursor.setHiddenUntilMouseMoves(!visible && (view?.canHideCursor() ?? false))
     }
 

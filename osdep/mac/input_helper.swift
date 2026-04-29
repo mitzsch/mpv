@@ -23,6 +23,8 @@ class InputHelper: NSObject {
     var lock = NSCondition()
     private var input: OpaquePointer?
 
+    func getInputCtx() -> OpaquePointer? { return lock.withLock { input } }
+
     let keymap: [mp_keymap] = [
         // special keys
         .init(kVK_Return, MP_KEY_ENTER), .init(kVK_Escape, MP_KEY_ESC),

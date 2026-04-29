@@ -39,6 +39,7 @@
 #include "stream/stream.h"
 #include "video/out/gpu/video.h"
 #include "wayland_common.h"
+#include "wayland_configure_cb.h"
 #include "win_state.h"
 
 // Generated from wayland-protocols
@@ -355,7 +356,8 @@ static void pointer_handle_enter(void *data, struct wl_pointer *pointer,
     s->last_serial = serial;
 
     s->pointer_enter_serial = serial;
-    set_cursor_visibility(s, wl->cursor_visible);
+    if (mp_input_vo_cursor_enabled(wl->vo->input_ctx))
+        set_cursor_visibility(s, wl->cursor_visible);
     mp_input_put_key(wl->vo->input_ctx, MP_KEY_MOUSE_ENTER);
 
     wl->mouse_x = handle_round(wl->scaling, wl_fixed_to_int(sx));
@@ -699,7 +701,8 @@ static void tablet_tool_handle_proximity_in(void *data,
 {
     struct vo_wayland_tablet_tool *tablet_tool = data;
     tablet_tool->proximity_serial = serial;
-    set_cursor_visibility(tablet_tool->seat, true);
+    if (mp_input_vo_cursor_enabled(tablet_tool->wl->vo->input_ctx))
+        set_cursor_visibility(tablet_tool->seat, true);
     mp_input_set_tablet_tool_in_proximity(tablet_tool->wl->vo->input_ctx, true);
 }
 
@@ -1953,11 +1956,19 @@ resize:
     wl->override_surface_local = width == 0 || height == 0 || wl->reconfigured;
     wl->toplevel_configured = true;
     wl->reconfigured = false;
+    if (wl->configure_cb)
+        wl->configure_cb(wl->configure_cb_data,
+                         mp_rect_w(wl->geometry), mp_rect_h(wl->geometry),
+                         is_fullscreen);
 }
 
 static void handle_toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel)
 {
     struct vo_wayland_state *wl = data;
+    if (wl->close_cb) {
+        wl->close_cb(wl->close_cb_data);
+        return;
+    }
     mp_input_put_key(wl->vo->input_ctx, MP_KEY_CLOSE_WIN);
 }
 
@@ -4292,6 +4303,42 @@ int vo_wayland_control(struct vo *vo, int *events, int request, void *arg)
         *(bool *)arg = wl->focused;
         return VO_TRUE;
     }
+    case VOCTRL_GET_WAYLAND_DISPLAY: {
+        *(int64_t *)arg = (intptr_t)wl->display;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_SURFACE: {
+        *(int64_t *)arg = (intptr_t)wl->surface;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_XDG_TOPLEVEL: {
+        *(int64_t *)arg = (intptr_t)wl->xdg_toplevel;
+        return VO_TRUE;
+    }
+    case VOCTRL_SET_WAYLAND_CONFIGURE_CB: {
+        struct vo_wayland_configure_cb *cb = arg;
+        wl->configure_cb = cb->fn;
+        wl->configure_cb_data = cb->data;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_STATE: {
+        *(int64_t *)arg = (intptr_t)wl;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_CONFIGURE_CB_PTR: {
+        *(int64_t *)arg = (intptr_t)&wl->configure_cb;
+        return VO_TRUE;
+    }
+    case VOCTRL_GET_WAYLAND_CLOSE_CB_PTR: {
+        *(int64_t *)arg = (intptr_t)&wl->close_cb;
+        return VO_TRUE;
+    }
+    case VOCTRL_TOGGLE_FULLSCREEN: {
+        wl->opts->fullscreen = !wl->opts->fullscreen;
+        m_config_cache_write_opt(wl->opts_cache, &wl->opts->fullscreen);
+        toggle_fullscreen(wl);
+        return VO_TRUE;
+    }	
     case VOCTRL_GET_DISPLAY_NAMES: {
         *(char ***)arg = get_displays_spanned(wl);
         return VO_TRUE;
@@ -4372,6 +4419,8 @@ int vo_wayland_control(struct vo *vo, int *events, int request, void *arg)
     case VOCTRL_UPDATE_WINDOW_TITLE:
         return update_window_title(wl, (const char *)arg);
     case VOCTRL_SET_CURSOR_VISIBILITY:
+        if (!mp_input_vo_cursor_enabled(wl->vo->input_ctx))
+            return VO_TRUE;
         return set_cursor_visibility_all_seats(wl, *(bool *)arg);
     case VOCTRL_KILL_SCREENSAVER:
         return set_screensaver_inhibitor(wl, true);

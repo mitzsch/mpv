@@ -119,6 +119,14 @@ enum mp_voctrl {
     VOCTRL_GET_HIDPI_SCALE,             // double*
     VOCTRL_GET_DISPLAY_RES,             // int[2]
     VOCTRL_GET_WINDOW_ID,               // int64_t*
+    VOCTRL_GET_WAYLAND_DISPLAY,         // int64_t* (wl_display*)
+    VOCTRL_GET_WAYLAND_SURFACE,         // int64_t* (wl_surface*)
+    VOCTRL_GET_WAYLAND_XDG_TOPLEVEL,    // int64_t* (xdg_toplevel*)
+    VOCTRL_SET_WAYLAND_CONFIGURE_CB,    // struct vo_wayland_configure_cb*
+    VOCTRL_GET_WAYLAND_STATE,           // int64_t* (vo_wayland_state*)
+    VOCTRL_GET_WAYLAND_CONFIGURE_CB_PTR, // int64_t* (pointer to configure_cb field)
+    VOCTRL_GET_WAYLAND_CLOSE_CB_PTR,    // int64_t* (pointer to close_cb field)
+    VOCTRL_TOGGLE_FULLSCREEN,           // no arg — toggle fullscreen directly on VO thread
 
     /* private to vo_gpu and vo_gpu_next */
     VOCTRL_EXTERNAL_RESIZE,
@@ -458,6 +466,11 @@ struct vo_driver {
 
     // Registers global options that go to a separate options struct.
     const struct m_sub_options *global_opts;
+};
+
+struct vo_wayland_configure_cb {
+    void (*fn)(void *data, int width, int height, bool fullscreen);
+    void *data;
 };
 
 struct vo {

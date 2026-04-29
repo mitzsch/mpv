@@ -1595,7 +1595,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         // The cursor should only be hidden if the mouse is in the client area
         // and if the window isn't in menu mode (HIWORD(lParam) is non-zero)
         w32->can_set_cursor = LOWORD(lParam) == HTCLIENT && HIWORD(lParam);
-        if (w32->can_set_cursor && !w32->cursor_visible) {
+        if (mp_input_vo_cursor_enabled(w32->input_ctx) &&
+            w32->can_set_cursor && !w32->cursor_visible) {
             SetCursor(NULL);
             return TRUE;
         }
@@ -1756,12 +1757,23 @@ static mp_once window_class_init_once = MP_STATIC_ONCE_INITIALIZER;
 static ATOM window_class;
 static void register_window_class(void)
 {
+    // MPV_WINDOW_ICON: embedders set this env var to the icon resource name
+    // in the host executable (e.g. "IDI_ICON1"). When set, LoadIcon uses the
+    // exe module instead of the libmpv DLL, so the embedder's icon appears
+    // from the first frame with no flash.
+    HICON icon = NULL;
+    wchar_t icon_name[64];
+    if (GetEnvironmentVariableW(L"MPV_WINDOW_ICON", icon_name, 64) > 0)
+        icon = LoadIconW(GetModuleHandleW(NULL), icon_name);
+    if (!icon)
+        icon = LoadIconW(HINST_THISCOMPONENT, L"IDI_ICON1");
+
     window_class = RegisterClassExW(&(WNDCLASSEXW) {
         .cbSize = sizeof(WNDCLASSEXW),
         .style = CS_HREDRAW | CS_VREDRAW,
         .lpfnWndProc = WndProc,
         .hInstance = HINST_THISCOMPONENT,
-        .hIcon = LoadIconW(HINST_THISCOMPONENT, L"IDI_ICON1"),
+        .hIcon = icon,
         .hCursor = LoadCursor(NULL, IDC_ARROW),
         .hbrBackground = (HBRUSH) GetStockObject(BLACK_BRUSH),
         .lpszClassName = MPV_WINDOW_CLASS_NAME,
@@ -2104,6 +2116,7 @@ static MP_THREAD_VOID gui_thread(void *ptr)
         goto done;
     }
 
+
     w32->menu_ctx = mp_win32_menu_init(w32->window);
     update_dark_mode(w32);
     update_corners_pref(w32);
@@ -2439,6 +2452,8 @@ static int gui_thread_control(struct vo_w32_state *w32, int request, void *arg)
         return VO_TRUE;
     }
     case VOCTRL_SET_CURSOR_VISIBILITY:
+        if (!mp_input_vo_cursor_enabled(w32->input_ctx))
+            return VO_TRUE;
         w32->cursor_visible = *(bool *)arg;
 
         if (w32->can_set_cursor && w32->tracking) {

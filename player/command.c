@@ -1468,6 +1468,86 @@ static int mp_property_window_id(void *ctx, struct m_property *prop,
     return m_property_int64_ro(action, arg, wid);
 }
 
+static int mp_property_wayland_display(void *ctx, struct m_property *prop,
+                                       int action, void *arg)
+{
+    MPContext *mpctx = ctx;
+    struct vo *vo = mpctx->video_out;
+    int64_t val;
+    if (!vo || vo_control(vo, VOCTRL_GET_WAYLAND_DISPLAY, &val) <= 0)
+        return M_PROPERTY_UNAVAILABLE;
+    return m_property_int64_ro(action, arg, val);
+}
+
+static int mp_property_wayland_surface(void *ctx, struct m_property *prop,
+                                       int action, void *arg)
+{
+    MPContext *mpctx = ctx;
+    struct vo *vo = mpctx->video_out;
+    int64_t val;
+    if (!vo || vo_control(vo, VOCTRL_GET_WAYLAND_SURFACE, &val) <= 0)
+        return M_PROPERTY_UNAVAILABLE;
+    return m_property_int64_ro(action, arg, val);
+}
+
+static int mp_property_wayland_xdg_toplevel(void *ctx, struct m_property *prop,
+                                            int action, void *arg)
+{
+    MPContext *mpctx = ctx;
+    struct vo *vo = mpctx->video_out;
+    int64_t val;
+    if (!vo || vo_control(vo, VOCTRL_GET_WAYLAND_XDG_TOPLEVEL, &val) <= 0)
+        return M_PROPERTY_UNAVAILABLE;
+    return m_property_int64_ro(action, arg, val);
+}
+
+static int mp_property_wayland_state(void *ctx, struct m_property *prop,
+                                     int action, void *arg)
+{
+    MPContext *mpctx = ctx;
+    struct vo *vo = mpctx->video_out;
+    int64_t val;
+    if (!vo || vo_control(vo, VOCTRL_GET_WAYLAND_STATE, &val) <= 0)
+        return M_PROPERTY_UNAVAILABLE;
+    return m_property_int64_ro(action, arg, val);
+}
+
+static int mp_property_wayland_configure_cb_ptr(void *ctx, struct m_property *prop,
+                                                int action, void *arg)
+{
+    MPContext *mpctx = ctx;
+    struct vo *vo = mpctx->video_out;
+    int64_t val;
+    if (!vo || vo_control(vo, VOCTRL_GET_WAYLAND_CONFIGURE_CB_PTR, &val) <= 0)
+        return M_PROPERTY_UNAVAILABLE;
+    return m_property_int64_ro(action, arg, val);
+}
+
+static int mp_property_wayland_close_cb_ptr(void *ctx, struct m_property *prop,
+                                            int action, void *arg)
+{
+    MPContext *mpctx = ctx;
+    struct vo *vo = mpctx->video_out;
+    int64_t val;
+    if (!vo || vo_control(vo, VOCTRL_GET_WAYLAND_CLOSE_CB_PTR, &val) <= 0)
+        return M_PROPERTY_UNAVAILABLE;
+    return m_property_int64_ro(action, arg, val);
+}
+
+static int mp_property_wayland_toggle_fullscreen(void *ctx, struct m_property *prop,
+                                                 int action, void *arg)
+{
+    MPContext *mpctx = ctx;
+    struct vo *vo = mpctx->video_out;
+    if (!vo)
+        return M_PROPERTY_UNAVAILABLE;
+    if (action == M_PROPERTY_SET) {
+        vo_control(vo, VOCTRL_TOGGLE_FULLSCREEN, NULL);
+        return M_PROPERTY_OK;
+    }
+    return M_PROPERTY_NOT_IMPLEMENTED;
+}
+
 static int mp_property_eof_reached(void *ctx, struct m_property *prop,
                                    int action, void *arg)
 {
@@ -4589,6 +4669,13 @@ static const struct m_property mp_properties_base[] = {
     {"deinterlace-active", mp_property_deinterlace},
     {"idle-active", mp_property_idle},
     {"window-id", mp_property_window_id},
+    {"wayland-display", mp_property_wayland_display},
+    {"wayland-surface", mp_property_wayland_surface},
+    {"wayland-xdg-toplevel", mp_property_wayland_xdg_toplevel},
+    {"wayland-state", mp_property_wayland_state},
+    {"wayland-configure-cb-ptr", mp_property_wayland_configure_cb_ptr},
+    {"wayland-close-cb-ptr", mp_property_wayland_close_cb_ptr},
+    {"wayland-toggle-fullscreen", mp_property_wayland_toggle_fullscreen},
     {"display-swapchain", mp_property_vo_display_swapchain},
 
     {"chapter-list", mp_property_list_chapters},
