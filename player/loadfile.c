@@ -289,13 +289,13 @@ static bool edition_has_track_of_type(struct MPContext *mpctx,
     int program = demuxer->editions[demuxer->edition].demuxer_id;
     for (int n = 0; n < mpctx->num_tracks; n++) {
         struct track *t = mpctx->tracks[n];
-        if (t->type == type && t->program_id == program)
+        if (t->type == type && track_has_program(t, program))
             return true;
     }
     return false;
 }
 
-bool track_in_current_edition(struct MPContext *mpctx, struct track *track)
+static bool track_in_current_edition(struct MPContext *mpctx, struct track *track)
 {
     struct demuxer *demuxer = mpctx->demuxer;
     if (!demuxer || !demuxer->edition_is_track_mapping || demuxer->num_editions <= 1)
@@ -303,13 +303,22 @@ bool track_in_current_edition(struct MPContext *mpctx, struct track *track)
     if (track->is_external)
         return true;
     int program = demuxer->editions[demuxer->edition].demuxer_id;
-    if (track->program_id == program)
+    if (track_has_program(track, program))
         return true;
     // Program-agnostic tracks only show in editions that don't supply their own
     // track of this type.
-    if (track->program_id < 0)
+    if (!track->stream || !track->stream->num_program_ids)
         return !edition_has_track_of_type(mpctx, track->type);
     return false;
+}
+
+bool track_is_visible(struct MPContext *mpctx, struct track *track)
+{
+    if (!track_in_current_edition(mpctx, track))
+        return false;
+    if (track->dependent_track && !mpctx->opts->show_dependent_tracks)
+        return false;
+    return true;
 }
 
 void print_track_list(struct MPContext *mpctx, const char *msg)
@@ -319,7 +328,7 @@ void print_track_list(struct MPContext *mpctx, const char *msg)
     for (int t = 0; t < STREAM_TYPE_COUNT; t++) {
         for (int n = 0; n < mpctx->num_tracks; n++) {
             struct track *track = mpctx->tracks[n];
-            if (track->type != t || !track_in_current_edition(mpctx, track))
+            if (track->type != t || !track_is_visible(mpctx, track))
                 continue;
             // Indent tracks after messages like "Tracks switched" and
             // "Playing:".
@@ -460,7 +469,6 @@ static struct track *add_stream_track(struct MPContext *mpctx,
         .demuxer_id = stream->demuxer_id,
         .ff_index = stream->ff_index,
         .hls_bitrate = stream->hls_bitrate,
-        .program_id = stream->program_id,
         .title = stream->title,
         .default_track = stream->default_track,
         .forced_track = stream->forced_track,
@@ -607,6 +615,7 @@ struct track *select_default_track(struct MPContext *mpctx, int order,
 {
     struct MPOpts *opts = mpctx->opts;
     int tid = opts->stream_id[order][type];
+    const struct demuxer *demuxer = mpctx->demuxer;
     if (tid == -2)
         return NULL;
     char **langs = process_langs(opts->stream_lang[type]);
@@ -621,12 +630,22 @@ struct track *select_default_track(struct MPContext *mpctx, int order,
                              mpctx->current_track[0][STREAM_AUDIO]->lang :
                              NULL;
     bool sub = type == STREAM_SUB;
+    int *preferred_programs = NULL;
+    int num_preferred_programs = 0;
+    struct track *cvt = mpctx->current_track[0][STREAM_VIDEO];
+    bool video_has_programs = cvt && cvt->stream && cvt->stream->num_program_ids;
+    bool no_edition_mapping = !demuxer || !demuxer->edition_is_track_mapping ||
+                              demuxer->num_editions <= 1;
+    if (type != STREAM_VIDEO && video_has_programs && no_edition_mapping) {
+        preferred_programs = cvt->stream->program_ids;
+        num_preferred_programs = cvt->stream->num_program_ids;
+    }
     struct track *pick = NULL;
     for (int n = 0; n < mpctx->num_tracks; n++) {
         struct track *track = mpctx->tracks[n];
         if (track->type != type)
             continue;
-        if (!track_in_current_edition(mpctx, track))
+        if (!track_is_visible(mpctx, track))
             continue;
         if (track->user_tid == tid) {
             pick = track;
@@ -635,6 +654,13 @@ struct track *select_default_track(struct MPContext *mpctx, int order,
         if (track->no_auto_select)
             continue;
         if (!opts->autoload_files && track->is_external)
+            continue;
+        // Prefer tracks from the same programs as the selected video.
+        bool in_program = !num_preferred_programs || track->is_external ||
+                          !track->stream || !track->stream->num_program_ids;
+        for (int i = 0; i < num_preferred_programs && !in_program; i++)
+            in_program = track_has_program(track, preferred_programs[i]);
+        if (!in_program)
             continue;
         if (duplicate_track(mpctx, order, type, track))
             continue;

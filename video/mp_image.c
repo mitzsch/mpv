@@ -68,7 +68,8 @@ static int mp_image_layout(int imgfmt, int w, int h, int stride_align,
         int alloc_w = mp_chroma_div_up(w, desc.xs[n]);
         int alloc_h = MP_ALIGN_UP(h, 32) >> desc.ys[n];
         int line_bytes = (alloc_w * desc.bpp[n] + 7) / 8;
-        out_stride[n] = MP_ALIGN_NPOT(line_bytes, stride_align);
+        int align = mp_lcm(stride_align, (desc.bpp[n] && desc.bpp[n] % 8 == 0) ? desc.bpp[n] / 8 : 1);
+        out_stride[n] = MP_ALIGN_NPOT(line_bytes, align);
         out_plane_size[n] = out_stride[n] * alloc_h;
     }
     if (desc.flags & MP_IMGFLAG_PAL)
@@ -1173,8 +1174,12 @@ struct mp_image *mp_image_from_av_frame(struct AVFrame *src)
     if (sd) {
 #ifdef PL_HAVE_LAV_DOLBY_VISION
         const AVDOVIMetadata *metadata = (const AVDOVIMetadata *)sd->buf->data;
+#if PL_API_VER >= 364
+        if (pl_avdovi_metadata_supported(metadata)) {
+#else
         const AVDOVIRpuDataHeader *header = av_dovi_get_header(metadata);
         if (header->disable_residual_flag) {
+#endif
             dst->dovi = dovi = av_buffer_alloc(sizeof(struct pl_dovi_metadata));
             MP_HANDLE_OOM(dovi);
             pl_map_avdovi_metadata(&dst->params.color, &dst->params.repr,

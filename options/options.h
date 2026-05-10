@@ -254,6 +254,8 @@ typedef struct MPOpts {
     bool use_filedir_conf;
     int hls_bitrate;
     int edition_id;
+    bool flatten_editions;
+    bool show_dependent_tracks;
     bool initial_audio_sync;
     double sync_max_video_change;
     double sync_max_audio_change;
@@ -388,6 +390,7 @@ typedef struct MPOpts {
     struct hwdec_opts *hwdec_opts;
 
     struct input_opts *input_opts;
+    bool builtin_dnd;
 
     struct clipboard_opts *clipboard_opts;
 

@@ -140,6 +140,7 @@ struct priv {
     double last_pts;
     bool is_interpolated;
     bool want_reset;
+    bool flush_cache;
     bool frame_pending;
 
     pl_options pars;
@@ -345,14 +346,21 @@ static void update_overlays(struct vo *vo, struct mp_osd_res res,
             MP_ERR(vo, "Failed recreating OSD texture!\n");
             break;
         }
-        ok = pl_tex_upload(p->gpu, &(struct pl_tex_transfer_params) {
+        struct pl_tex_transfer_params upload_params = {
             .tex        = entry->tex,
             .rc         = { .x1 = item->packed_w, .y1 = item->packed_h, },
             .row_pitch  = item->packed->stride[0],
             .ptr        = item->packed->planes[0],
-        });
+        };
+        // Keep the image alive until it's fully read.
+        if (p->gpu->limits.callbacks) {
+            upload_params.callback = talloc_free;
+            upload_params.priv = mp_image_new_ref(item->packed);
+        }
+        ok = pl_tex_upload(p->gpu, &upload_params);
         if (!ok) {
             MP_ERR(vo, "Failed uploading OSD texture!\n");
+            talloc_free(upload_params.priv);
             break;
         }
 
@@ -790,8 +798,12 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
                 data[n].buf = buf;
                 data[n].buf_offset = (uint8_t *) data[n].pixels - buf->data;
                 data[n].pixels = NULL;
-            } else if (gpu->limits.callbacks) {
+            }
+            // Keep the image alive until it's fully read.
+            if (gpu->limits.callbacks) {
+                mp_assert(!data[n].callback);
                 data[n].callback = talloc_free;
+                mp_assert(!data[n].priv);
                 data[n].priv = mp_image_new_ref(mpi);
             }
 
@@ -803,6 +815,10 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
                 talloc_free(mpi);
                 return false;
             }
+
+            // Without async callback support, we have to poll...
+            if (!gpu->limits.callbacks && data[n].buf)
+                while (pl_buf_poll(gpu, data[n].buf, UINT64_MAX));
         }
         timer_pool_stop(p->sw_upload_timer);
         p->sw_upload_perf = timer_pool_measure(p->sw_upload_timer);
@@ -1106,11 +1122,16 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
         int id = frame->frame_id + n;
 
         if (p->want_reset) {
-            pl_renderer_flush_cache(p->rr);
             pl_queue_reset(p->queue);
             p->last_pts = 0.0;
             p->last_id = 0;
             p->want_reset = false;
+            p->flush_cache = true;
+        }
+
+        if (p->flush_cache) {
+            pl_renderer_flush_cache(p->rr);
+            p->flush_cache = false;
         }
 
         if (id <= p->last_id)
@@ -1380,7 +1401,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
         case PL_QUEUE_MORE:
             // This is expected to happen semi-frequently near the start and
             // end of a file, so only log it at high verbosity and move on.
-            MP_DBG(vo, "Render queue underrun.\n");
+            if (!frame->still)
+                MP_DBG(vo, "Render queue underrun.\n");
             break;
         case PL_QUEUE_OK:
             break;
@@ -2143,6 +2165,11 @@ done:
 static void uninit(struct vo *vo)
 {
     struct priv *p = vo->priv;
+
+    // Drain any in-flight uploads.
+    if (p->gpu)
+        pl_gpu_finish(p->gpu);
+
     pl_queue_destroy(&p->queue); // destroy this first
     for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
         pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
@@ -2667,8 +2694,8 @@ AV_NOWARN_DEPRECATED(
 
     pars->params.hooks = p->hooks;
 
-    MP_DBG(p, "Render options updated, resetting render state.\n");
-    p->want_reset = true;
+    MP_DBG(p, "Render options updated, flushing renderer cache.\n");
+    p->flush_cache = true;
 }
 
 const struct vo_driver video_out_gpu_next = {

@@ -14,25 +14,8 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
  */
+#pragma once
 
-#ifndef MPLAYER_FIND_SUBFILES_H
-#define MPLAYER_FIND_SUBFILES_H
+#include "player/client.h"
 
-#include <stdbool.h>
-
-#include "common/common.h"
-
-struct subfn {
-    int type; // STREAM_SUB/STREAM_AUDIO/STREAM_VIDEO(coverart)
-    int priority;
-    char *fname;
-    char *lang;
-    enum track_flags flags;
-};
-
-struct mpv_global;
-struct MPOpts;
-struct subfn *find_external_files(struct mpv_global *global, const char *fname,
-                                  struct MPOpts *opts);
-
-#endif /* MPLAYER_FINDFILES_H */
+void mp_dnd_init(mpv_handle *mpv);

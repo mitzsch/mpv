@@ -102,6 +102,8 @@ const struct m_sub_options demux_conf = {
         {"cache-on-disk", OPT_BOOL(disk_cache)},
         {"demuxer-readahead-secs", OPT_DOUBLE(min_secs), M_RANGE(0, DBL_MAX)},
         {"demuxer-hysteresis-secs", OPT_DOUBLE(hyst_secs), M_RANGE(0, DBL_MAX)},
+        {"demuxer-hysteresis-bytes", OPT_BYTE_SIZE(hyst_bytes),
+            M_RANGE(0, M_MAX_MEM_BYTES)},
         {"demuxer-max-bytes", OPT_BYTE_SIZE(max_bytes),
             M_RANGE(0, M_MAX_MEM_BYTES)},
         {"demuxer-max-back-bytes", OPT_BYTE_SIZE(max_bytes_bw),
@@ -201,6 +203,7 @@ struct demux_internal {
     bool eof;                   // whether we're in EOF state
     double min_secs;
     double hyst_secs;           // stop reading till there's hyst_secs remaining
+    size_t hyst_bytes;          // stop reading till there's hyst_bytes remaining
     bool hyst_active;
     size_t max_bytes;
     size_t max_bytes_bw;
@@ -960,7 +963,6 @@ struct sh_stream *demux_alloc_sh_stream(enum stream_type type)
         .index = -1,
         .ff_index = -1,     // may be overwritten by demuxer
         .demuxer_id = -1,   // ... same
-        .program_id = -1,   // ... same
         .codec = talloc_zero(sh, struct mp_codec_params),
         .tags = talloc_zero(sh, struct mp_tags),
     };
@@ -1295,7 +1297,7 @@ char *demux_compose_edition_title(void *ta_ctx, struct demuxer *demuxer,
     int num = demux_get_num_stream(demuxer);
     for (int i = 0; i < num; i++) {
         struct sh_stream *s = demux_get_stream(demuxer, i);
-        if (s->program_id != program_id)
+        if (!sh_stream_has_program(s, program_id))
             continue;
         if (s->type == STREAM_VIDEO) { video_count++; vsh = s; }
         else if (s->type == STREAM_AUDIO) { audio_count++; ash = s; }
@@ -1330,7 +1332,8 @@ static struct sh_stream *demuxer_get_cc_track_locked(struct sh_stream *stream)
         sh->codec->codec = "eia_608";
         sh->default_track = true;
         sh->hls_bitrate = stream->hls_bitrate;
-        sh->program_id = stream->program_id;
+        for (int i = 0; i < stream->num_program_ids; i++)
+            MP_TARRAY_APPEND(sh, sh->program_ids, sh->num_program_ids, stream->program_ids[i]);
         stream->ds->cc = sh;
         demux_add_sh_stream_locked(stream->ds->in, sh);
         sh->ds->ignore_eof = true;
@@ -2275,12 +2278,17 @@ static bool read_packet(struct demux_internal *in)
         total_fw_bytes += get_forward_buffered_bytes(ds);
     }
 
+    if (in->hyst_bytes > 0 && total_fw_bytes <= in->hyst_bytes) {
+        in->hyst_active = false;
+        prefetch_more |= true;
+    }
+
     MP_TRACE(in, "bytes=%zd, read_more=%d prefetch_more=%d, refresh_more=%d\n",
              (size_t)total_fw_bytes, read_more, prefetch_more, refresh_more);
     if (total_fw_bytes >= in->max_bytes) {
         // if we hit the limit just by prefetching, simply stop prefetching
         if (!read_more) {
-            in->hyst_active = !!in->hyst_secs;
+            in->hyst_active = in->hyst_secs > 0 || in->hyst_bytes > 0;
             return false;
         }
         if (!in->warned_queue_overflow) {
@@ -2313,7 +2321,7 @@ static bool read_packet(struct demux_internal *in)
     }
 
     if (!read_more && !prefetch_more && !refresh_more) {
-        in->hyst_active = !!in->hyst_secs;
+        in->hyst_active = in->hyst_secs > 0 || in->hyst_bytes > 0;
         return false;
     }
 
@@ -2533,6 +2541,7 @@ static void update_opts(struct demuxer *demuxer)
 
     in->min_secs = opts->min_secs;
     in->hyst_secs = opts->hyst_secs;
+    in->hyst_bytes = opts->hyst_bytes;
     in->max_bytes = opts->max_bytes;
     in->max_bytes_bw = opts->max_bytes_bw;
 
