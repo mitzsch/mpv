@@ -227,7 +227,7 @@ $projects = @(
     @{
         Path = "$subprojects/ffmpeg.wrap"
         URL = "https://gitlab.freedesktop.org/gstreamer/meson-ports/ffmpeg.git"
-        Revision = "meson-8.0"
+        Revision = "meson-8.1"
         Provides = @(
             "dependency_names = libavcodec, libavdevice, libavfilter, libavformat, libavutil, libswresample, libswscale"
             "program_names = ffmpeg"
@@ -322,6 +322,7 @@ meson setup build `
     -Dlibplacebo:tests=false `
     -Dlibplacebo:vulkan=enabled `
     -Dlibplacebo:d3d11=enabled `
+    -Dlibpsl:tests=false `
     -Dxxhash:inline-all=true `
     -Dxxhash:cli=false `
     -Dluajit:amalgam=true `

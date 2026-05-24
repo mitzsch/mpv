@@ -108,11 +108,22 @@ function gettar {
     local dname="$2"
     [ -z "$dname" ] && dname="${fname%.tar.*}"
     [ -d "$dname" ] && return 0
-    $wget "$1" -O "$fname"
+    local cachename="$(md5sum <<<"$1" | cut -d " " -f 1)"
+    if [[ -n "$DOWNLOAD_CACHE" && -s "$DOWNLOAD_CACHE/$cachename" ]]; then
+        cp -v "$DOWNLOAD_CACHE/$cachename" "$fname"
+        cachename=
+    else
+        $wget "$1" -O "$fname"
+    fi
     tar -xaf "$fname"
     if [ ! -d "$dname" ]; then
         echo "Error: expected $fname to extract to $dname but it was not created" >&2
         return 2
+    fi
+    if [[ -n "$DOWNLOAD_CACHE" && -n "$cachename" ]]; then
+        # assume successful extraction means the file was fine
+        mkdir -p "$DOWNLOAD_CACHE"
+        cp -v "$fname" "$DOWNLOAD_CACHE/$cachename"
     fi
 }
 
@@ -324,6 +335,17 @@ _subrandr () {
 }
 _subrandr_mark=lib/libsubrandr.dll.a
 
+_curl () {
+    local ver=8.20.0
+    gettar "https://curl.se/download/curl-${ver}.tar.xz"
+    builddir curl-${ver}
+    cmake .. "${cmake_args[@]}" \
+        -DCURL_{USE_SCHANNEL,ZLIB}=ON -DCURL_DISABLE_LDAP=ON -DCURL_USE_LIBPSL=OFF
+    makeplusinstall
+    popd
+}
+_curl_mark=lib/libcurl.dll.a
+
 for x in iconv zlib-ng shaderc spirv-cross amf-headers nv-headers dav1d lcms2; do
     build_if_missing $x
 done
@@ -331,7 +353,7 @@ if [[ "$TARGET" != "i686-"* ]]; then
     build_if_missing vulkan-headers
     build_if_missing vulkan-loader
 fi
-for x in ffmpeg libplacebo freetype fribidi harfbuzz libass luajit; do
+for x in ffmpeg libplacebo freetype fribidi harfbuzz libass luajit curl; do
     build_if_missing $x
 done
 if [[ "$TARGET" != "i686-"* ]]; then
@@ -358,7 +380,7 @@ mpv_args=(
     -Dmujs:werror=false
     -Dmujs:default_library=static
     -Dlua=luajit
-    -D{amf,shaderc,spirv-cross,d3d11,javascript}=enabled
+    -D{amf,shaderc,spirv-cross,d3d11,javascript,libcurl}=enabled
 )
 meson setup $build "${mpv_args[@]}"
 meson compile -C $build
@@ -384,7 +406,7 @@ if [ "$2" = pack ]; then
         av*.dll sw*.dll postproc-[0-9]*.dll
         # everything else
         subrandr-[0-9]*.dll lib{ass,freetype,fribidi,harfbuzz,iconv,placebo}-[0-9]*.dll
-        lib{shaderc_shared,spirv-cross-c-shared,dav1d,lcms2,zlib1}.dll
+        lib{curl,shaderc_shared,spirv-cross-c-shared,dav1d,lcms2,zlib1}.dll
     )
     [[ -f vulkan-1.dll ]] && dlls+=(vulkan-1.dll)
     mv -v "${dlls[@]}" ..

@@ -184,6 +184,7 @@ sources = files(
 
     ## Streams
     'stream/cookies.c',
+    'stream/network.c',
     'stream/stream.c',
     'stream/stream_avdevice.c',
     'stream/stream_cb.c',
@@ -618,6 +619,13 @@ subdir('sub')
 
 if darwin
     subdir(join_paths('TOOLS', 'osxbundle'))
+endif
+
+libcurl = dependency('libcurl', version: '>= 7.87.0', required: get_option('libcurl'))
+features += {'libcurl': libcurl.found()}
+if features['libcurl']
+    dependencies += [libcurl]
+    sources += files('stream/stream_curl.c')
 endif
 
 cdda_opt = get_option('cdda').require(
@@ -1914,6 +1922,7 @@ if features['sdl2-audio'] or features['sdl2-gamepad'] or features['sdl2-video']
 endif
 
 summary({'cocoa': features['cocoa'] and features['swift'],
+         'curl': features['libcurl'],
          'd3d11': features['d3d11'],
          'drm': features['drm'],
          'javascript': features['javascript'],
