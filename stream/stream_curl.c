@@ -65,6 +65,14 @@ static const struct curl_scheme curl_schemes[] = {
     {bstr0_lit("ftps"), MP_CURL_PROTO_FTP},
 };
 
+// Special args for use by lavf. Matches lavf/http.c "offset"/"end_offset" opts.
+// `offset` is the inclusive starting byte.
+// `end_offset` is the exclusive upper bound (0 = unbounded).
+struct curl_open_args {
+    int64_t offset;
+    int64_t end_offset;
+};
+
 struct curl_opts {
     bool enabled;
     int http_version;
@@ -159,6 +167,7 @@ struct priv {
     // Producer state. Only touched by the curl thread.
     uint64_t request_start;    // absolute byte position of next request
     uint64_t request_received; // bytes received in the current request
+    uint64_t request_end;      // exclusive byte cap (0 = unbounded)
     int retry_count;           // consecutive failed attempts at request_start
     bool active;               // handle is currently active in the multi
     bool finished;             // current request has reached EOF
@@ -570,8 +579,11 @@ static void start_request(struct priv *p)
 
     bool ranged = !p->probed || p->seekable;
     bool chunked = ranged && p->opts->max_request_size > 0;
+    bool capped = ranged && p->request_end > 0;
 
-    if (p->seekable && p->content_size > 0 && start >= p->content_size) {
+    bool past_size = p->seekable && p->content_size > 0 && start >= p->content_size;
+    bool past_end = capped && start >= p->request_end;
+    if (past_size || past_end) {
         p->finished = true;
         mp_mutex_lock(&p->mtx);
         p->stream_eof = true;
@@ -581,10 +593,14 @@ static void start_request(struct priv *p)
     }
 
     char range[64];
-    if (chunked) {
-        uint64_t end = start + p->opts->max_request_size - 1;
+    if (chunked || capped) {
+        uint64_t end = UINT64_MAX;
+        if (chunked)
+            end = start + p->opts->max_request_size - 1;
         if (p->content_size > 0)
             end = MPMIN(end, p->content_size - 1);
+        if (capped)
+            end = MPMIN(end, p->request_end - 1);
         snprintf(range, sizeof(range), "%" PRIu64 "-%" PRIu64, start, end);
         curl_easy_setopt(p->curl, CURLOPT_RANGE, range);
     } else if (ranged) {
@@ -599,6 +615,20 @@ static void start_request(struct priv *p)
     curl_multi_add_handle(p->ctx->multi, p->curl);
 }
 
+static void log_curl_error(struct priv *p, const char *what, CURLcode code)
+{
+    MP_ERR(p, "%s: %s\n", what, curl_easy_strerror(code));
+    if (code == CURLE_PEER_FAILED_VERIFICATION ||
+        code == CURLE_SSL_CACERT_BADFILE)
+    {
+        MP_ERR(p,
+            "TLS certificate verification failed.\n"
+            "This usually means an outdated CA bundle, a self-signed "
+            "certificate,\nor a MITM proxy on your network. To bypass at "
+            "your own risk, pass\n--tls-verify=no.\n");
+    }
+}
+
 static void on_done(struct priv *p, CURLcode code)
 {
     bool aborted = atomic_load_explicit(&p->aborted, memory_order_relaxed);
@@ -606,7 +636,7 @@ static void on_done(struct priv *p, CURLcode code)
     if (!p->probed) {
         // Connection died before any headers arrived.
         if (code != CURLE_OK && !aborted)
-            MP_ERR(p, "error: %s\n", curl_easy_strerror(code));
+            log_curl_error(p, "error", code);
         mp_mutex_lock(&p->mtx);
         p->probed = true;
         mp_cond_broadcast(&p->cond);
@@ -623,7 +653,9 @@ static void on_done(struct priv *p, CURLcode code)
         p->retry_count = 0;
 
         bool chunked = p->seekable && p->opts->max_request_size > 0;
-        if (chunked && (p->content_size <= 0 || p->request_start < p->content_size)) {
+        bool past_size = p->content_size > 0 && p->request_start >= p->content_size;
+        bool past_end = p->request_end > 0 && p->request_start >= p->request_end;
+        if (chunked && !past_size && !past_end) {
             start_request(p);
             return;
         }
@@ -650,7 +682,7 @@ static void on_done(struct priv *p, CURLcode code)
     }
 
     if (!aborted)
-        MP_ERR(p, "transfer failed: %s\n", curl_easy_strerror(code));
+        log_curl_error(p, "transfer failed", code);
 
     mp_mutex_lock(&p->mtx);
     p->stream_error = true;
@@ -722,6 +754,7 @@ static void setup_curl(struct priv *p)
     if (p->net_opts->http_proxy && p->net_opts->http_proxy[0])
         curl_easy_setopt(c, CURLOPT_PROXY, p->net_opts->http_proxy);
 
+    curl_easy_setopt(c, CURLOPT_SSL_OPTIONS, (long)CURLSSLOPT_NATIVE_CA);
     curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, p->net_opts->tls_verify ? 1L : 0L);
     curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, p->net_opts->tls_verify ? 2L : 0L);
     if (p->net_opts->tls_ca_file) {
@@ -872,6 +905,14 @@ static int curl_open(stream_t *s, const struct stream_open_args *args)
     p->buffer_size = p->opts->buffer_size;
     p->buffer = talloc_size(p, p->buffer_size);
 
+    if (args->special_arg) {
+        const struct curl_open_args *oa = args->special_arg;
+        if (oa->offset > 0)
+            p->request_start = oa->offset;
+        if (oa->end_offset > 0)
+            p->request_end = oa->end_offset;
+    }
+
     mp_mutex_init(&p->mtx);
     mp_cond_init(&p->cond);
     p->aborted = false;
@@ -1021,14 +1062,22 @@ int mp_curl_avio_open(struct demuxer *demuxer, AVIOContext **pb_out,
     // The context is required to be initialized in global.
     mp_require(demuxer->global && demuxer->global->curl);
 
-    // Nested IO plumbs whitelist/blacklist through the AVDictionary, use that
-    // if set, same as FFmpeg's implementation.
+    struct curl_open_args oa = {0};
     if (options && *options) {
         AVDictionaryEntry *e;
+        // Nested IO plumbs whitelist/blacklist through the AVDictionary,
+        // use that if set, same as FFmpeg's implementation.
         if ((e = av_dict_get(*options, "protocol_whitelist", NULL, 0)))
             whitelist = e->value;
         if ((e = av_dict_get(*options, "protocol_blacklist", NULL, 0)))
             blacklist = e->value;
+        // lavf's http demuxer exposes initial/final byte offsets as AVOptions
+        // Some demuxers, like lavf/hls.c assume it is always available, even for
+        // custom IO... Add support for this.
+        if ((e = av_dict_get(*options, "offset", NULL, 0)))
+            oa.offset = strtoll(e->value, NULL, 10);
+        if ((e = av_dict_get(*options, "end_offset", NULL, 0)))
+            oa.end_offset = strtoll(e->value, NULL, 10);
     }
 
     if (!is_protocol_allowed(demuxer->log, cs->scheme, whitelist, blacklist))
@@ -1046,6 +1095,7 @@ int mp_curl_avio_open(struct demuxer *demuxer, AVIOContext **pb_out,
         .url = url,
         .flags = STREAM_READ | (demuxer->stream_origin & STREAM_ORIGIN_MASK),
         .sinfo = &stream_info_curl,
+        .special_arg = &oa,
     };
 
     struct stream *s = NULL;
