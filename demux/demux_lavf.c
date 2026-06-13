@@ -1015,6 +1015,7 @@ static void build_editions(demuxer_t *demuxer)
         return;
     }
 
+    int first_nonempty = -1;
     for (unsigned i = 0; i < avfc->nb_programs; i++) {
         AVProgram *prog = avfc->programs[i];
 
@@ -1024,12 +1025,13 @@ static void build_editions(demuxer_t *demuxer)
         };
         mp_tags_copy_from_av_dictionary(ed.metadata, prog->metadata);
 
-        int video_count = 0, audio_count = 0;
+        int video_count = 0, audio_count = 0, track_count = 0;
         int video_idx = -1, audio_idx = -1;
         for (unsigned j = 0; j < prog->nb_stream_indexes; j++) {
             unsigned idx = prog->stream_index[j];
             if (idx >= priv->num_streams || !priv->streams[idx]->sh)
                 continue;
+            track_count++;
             struct sh_stream *sh = priv->streams[idx]->sh;
             if (sh->type == STREAM_VIDEO) {
                 video_count++;
@@ -1065,6 +1067,9 @@ static void build_editions(demuxer_t *demuxer)
                                                   prog->id, prefix);
         if (title)
             mp_tags_set_str(ed.metadata, "title", title);
+
+        if (track_count > 0 && first_nonempty < 0)
+            first_nonempty = demuxer->num_editions;
 
         MP_TARRAY_APPEND(demuxer, demuxer->editions, demuxer->num_editions, ed);
     }
@@ -1115,7 +1120,7 @@ static void build_editions(demuxer_t *demuxer)
             selected = best;
     }
 
-    demuxer->edition = selected >= 0 ? selected : 0;
+    demuxer->edition = selected >= 0 ? selected : first_nonempty >= 0 ? first_nonempty : 0;
 }
 
 #if LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(60, 19, 100)
@@ -1233,20 +1238,26 @@ static void handle_iamf_audio_element_group(demuxer_t *demuxer,
 // enhancement NALUs. Only the base is decodable on its own.
 static void handle_lcevc_group(demuxer_t *demuxer, AVStreamGroup *stg)
 {
-    lavf_priv_t *priv = demuxer->priv;
+#if LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(62, 19, 100)
+    AVStreamGroupLayeredVideo *lcevc = stg->params.layered_video;
+    unsigned el_index = lcevc->el_index;
+#else
     AVStreamGroupLCEVC *lcevc = stg->params.lcevc;
+    unsigned el_index = lcevc->lcevc_index;
+#endif
+    lavf_priv_t *priv = demuxer->priv;
 
-    if (lcevc->lcevc_index >= stg->nb_streams) {
-        MP_WARN(demuxer, "LCEVC group %u: lcevc_index %u out of range (%u streams)\n",
-                stg->index, lcevc->lcevc_index, stg->nb_streams);
+    if (el_index >= stg->nb_streams) {
+        MP_WARN(demuxer, "LCEVC group %u: el_index %u out of range (%u streams)\n",
+                stg->index, el_index, stg->nb_streams);
         return;
     }
 
     MP_VERBOSE(demuxer, "LCEVC group %u: enhancement stream index %u, "
                "final size %dx%d\n",
-               stg->index, lcevc->lcevc_index, lcevc->width, lcevc->height);
+               stg->index, el_index, lcevc->width, lcevc->height);
 
-    AVStream *lcevc_st = stg->streams[lcevc->lcevc_index];
+    AVStream *lcevc_st = stg->streams[el_index];
     if ((unsigned)lcevc_st->index < (unsigned)priv->num_streams) {
         struct sh_stream *sh = priv->streams[lcevc_st->index]->sh;
         if (sh)

@@ -191,14 +191,24 @@ static struct sub_bitmaps *get_bitmaps(struct sd *sd, struct mp_osd_res dim,
         .max_x = dim.w, .max_y = dim.h
     };
 
+    // Translate our clip rect by the zoom (negative) margin to get the
+    // part we're actually interested in.
+    clip_rect.min_x -= MPMIN(0, dim.ml);
+    clip_rect.min_y -= MPMIN(0, dim.mt);
+    clip_rect.max_x -= MPMIN(0, dim.ml);
+    clip_rect.max_y -= MPMIN(0, dim.mt);
+
     if (opts->sub_use_margins) {
-        context.padding_top = (int32_t)dim.mt << 6;
-        context.padding_bottom = (int32_t)dim.mb << 6;
-        context.padding_left = (int32_t)dim.ml << 6;
-        context.padding_right = (int32_t)dim.mr << 6;
+        context.padding_left = (int32_t)MPMAX(0, dim.ml) << 6;
+        context.padding_right = (int32_t)MPMAX(0, dim.mr) << 6;
+        context.padding_top = (int32_t)MPMAX(0, dim.mt) << 6;
+        context.padding_bottom = (int32_t)MPMAX(0, dim.mb) << 6;
     } else {
-        clip_rect.max_x -= dim.ml + dim.mr;
-        clip_rect.max_y -= dim.mt + dim.mb;
+        // Remove normal (positive) margins from our clip rect as
+        // those are already included in `dim.{w,h}` but we specifically
+        // don't want them here.
+        clip_rect.max_x -= MPMAX(0, dim.ml) + MPMAX(0, dim.mr);
+        clip_rect.max_y -= MPMAX(0, dim.mt) + MPMAX(0, dim.mb);
     }
 
     unsigned t = lrint(pts * 1000);
@@ -207,6 +217,8 @@ static struct sub_bitmaps *get_bitmaps(struct sd *sd, struct mp_osd_res dim,
     const struct sub_bitmaps *cached = mp_sub_packer_get_cached(ctx->packer);
 
     bool redraw_required = ctx->prev_osd.w != dim.w || ctx->prev_osd.h != dim.h ||
+                           ctx->prev_osd.ml != dim.ml || ctx->prev_osd.mt != dim.mt ||
+                           ctx->prev_osd.mr != dim.mr || ctx->prev_osd.mb != dim.mb ||
                            !cached || sbr_renderer_did_change(ctx->sbr_renderer, &context, t);
     if (redraw_required) {
         sbr_renderer_set_subtitles(ctx->sbr_renderer, ctx->sbr_subtitles);
@@ -223,12 +235,16 @@ static struct sub_bitmaps *get_bitmaps(struct sd *sd, struct mp_osd_res dim,
         mp_sub_packer_pack_sbr(ctx->packer, pass, &res);
         sbr_instanced_raster_pass_finish(pass);
 
-        if (!opts->sub_use_margins)
-            for (int i = 0; i < res.num_parts; ++i) {
-                struct sub_bitmap *part = &res.parts[i];
+        for (int i = 0; i < res.num_parts; ++i) {
+            struct sub_bitmap *part = &res.parts[i];
+            if (opts->sub_use_margins) {
+                part->x += MPMIN(0, dim.ml);
+                part->y += MPMIN(0, dim.mt);
+            } else {
                 part->x += dim.ml;
                 part->y += dim.mt;
             }
+        }
     } else
         res = *cached;
 
