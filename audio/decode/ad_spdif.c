@@ -93,6 +93,22 @@ static void ad_spdif_destroy(struct mp_filter *da)
     mp_free_av_packet(&spdif_ctx->avpkt);
 }
 
+static void ad_spdif_reset(struct mp_filter *da)
+{
+    struct spdifContext *spdif_ctx = da->priv;
+    AVFormatContext *lavf_ctx = spdif_ctx->lavf_ctx;
+
+    spdif_ctx->out_buffer_len = 0;
+
+    if (!lavf_ctx || !lavf_ctx->priv_data)
+        return;
+
+    int ret = av_opt_set_int(lavf_ctx->priv_data, "reset", 1, 0);
+    if (ret < 0 && ret != AVERROR_OPTION_NOT_FOUND)
+        MP_ERR(da, "spdif mux reset failed: '%s'\n",
+           mp_strerror(AVUNERROR(ret)));
+}
+
 static void determine_codec_params(struct mp_filter *da, AVPacket *pkt,
                                    int *out_profile, int *out_rate)
 {
@@ -426,6 +442,7 @@ static const struct mp_filter_info ad_spdif_filter = {
     .name = "ad_spdif",
     .priv_size = sizeof(struct spdifContext),
     .process = ad_spdif_process,
+    .reset = ad_spdif_reset,
     .destroy = ad_spdif_destroy,
 };
 
