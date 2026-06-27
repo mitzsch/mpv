@@ -84,12 +84,20 @@ struct curl_opts {
     int64_t max_request_size;
 };
 
-#ifndef CURL_HTTP_VERSION_3
-#define CURL_HTTP_VERSION_3 CURL_HTTP_VERSION_NONE
-#endif
-
-#ifndef CURL_HTTP_VERSION_3ONLY
-#define CURL_HTTP_VERSION_3ONLY CURL_HTTP_VERSION_NONE
+// Older lavf has a bug with nested IO cleanup, so don't enable curl by default.
+// <https://code.ffmpeg.org/FFmpeg/FFmpeg/pulls/23082>
+#if LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(62, 15, 101)
+#define CURL_BY_DEFAULT
+#elif LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(62, 12, 102) && LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(62, 13, 0)
+#define CURL_BY_DEFAULT /* 8.1 backport */
+#elif LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(62, 3, 103) && LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(62, 4, 0)
+#define CURL_BY_DEFAULT /* 8.0 backport */
+#elif LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(61, 7, 103) && LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(61, 8, 0)
+#define CURL_BY_DEFAULT /* 7.1 backport */
+#elif LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(61, 1, 103) && LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(61, 2, 0)
+#define CURL_BY_DEFAULT /* 7.0 backport */
+#elif LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(60, 16, 101) && LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(60, 17, 0)
+#define CURL_BY_DEFAULT /* 6.1 backport */
 #endif
 
 #define OPT_BASE_STRUCT struct curl_opts
@@ -116,9 +124,9 @@ const struct m_sub_options curl_conf = {
         {0}
     },
     .defaults = &(const struct curl_opts) {
-        // Older lavf has a bug with nested IO cleanup, disable by default.
-        // <https://code.ffmpeg.org/FFmpeg/FFmpeg/pulls/23082>
-        .enabled = LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(62, 15, 101),
+#ifdef CURL_BY_DEFAULT
+        .enabled = true,
+#endif
         .http_version = CURL_HTTP_VERSION_NONE,
         .max_redirects = 16,
         .max_retries = 5,
@@ -940,8 +948,9 @@ static int curl_open(stream_t *s, const struct stream_open_args *args)
 
     char *content_type = NULL;
     curl_easy_getinfo(p->curl, CURLINFO_CONTENT_TYPE, &content_type);
-    if (content_type && content_type[0])
-        s->mime_type = talloc_strdup(s, content_type);
+    bstr mime = bstr_strip(bstr_split(bstr0(content_type), ";", NULL));
+    if (mime.len)
+        s->mime_type = bstrto0(s, mime);
 
     const char *effective_url = NULL;
     curl_easy_getinfo(p->curl, CURLINFO_EFFECTIVE_URL, &effective_url);
@@ -955,6 +964,7 @@ static int curl_open(stream_t *s, const struct stream_open_args *args)
     s->seek = p->seekable ? curl_seek : NULL;
     s->get_size = curl_get_size;
     s->close = curl_close;
+    s->pos = p->request_start;
 
     return STREAM_OK;
 }
@@ -1164,6 +1174,7 @@ int mp_curl_avio_open(struct demuxer *demuxer, AVIOContext **pb_out,
     }
     pb->seekable = s->seekable ? AVIO_SEEKABLE_NORMAL : 0;
     pb->av_class = &curl_avio_class;
+    pb->pos = oa.offset;
 
     *pb_out = pb;
     *cookie_out = c;
