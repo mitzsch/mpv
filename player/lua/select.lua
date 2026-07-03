@@ -636,23 +636,32 @@ mp.add_key_binding(nil, "select-binding", function (t)
     })
 end, { complex = true })
 
-local properties = {}
-
-local function add_property(property, value)
+local function add_property(properties, property, value)
     value = value or mp.get_property_native(property)
 
     if type(value) == "table" and next(value) then
-        for key, val in pairs(value) do
-            add_property(property .. "/" .. key, val)
+        if type(next(value)) == "number" then
+            for i, val in ipairs(value) do
+                add_property(properties, property .. "/" .. (i - 1), val)
+            end
+        else
+            for key, val in pairs(value) do
+                add_property(properties, property .. "/" .. key, val)
+            end
         end
     else
-        properties[#properties + 1] = property .. ": " .. utils.to_string(value)
+        if type(value) == "boolean" then
+            value = value and "yes" or "no"
+        else
+            value = utils.to_string(value)
+        end
+        properties[#properties + 1] = property .. ": " .. value
     end
 end
 
 mp.add_key_binding(nil, "show-properties", function (t)
     if t.event == "up" or t.event == "repeat" then return end
-    properties = {}
+    local properties = {}
 
     -- Don't log errors for renamed and removed properties.
     local msg_level_backup = mp.get_property("msg-level")
@@ -660,15 +669,15 @@ mp.add_key_binding(nil, "show-properties", function (t)
                                  or msg_level_backup .. ",cplayer=no")
 
     for _, property in pairs(mp.get_property_native("property-list")) do
-        add_property(property)
+        add_property(properties, property)
     end
 
     mp.set_property("msg-level", msg_level_backup)
 
-    add_property("current-tracks/audio")
-    add_property("current-tracks/video")
-    add_property("current-tracks/sub")
-    add_property("current-tracks/sub2")
+    add_property(properties, "current-tracks/audio")
+    add_property(properties, "current-tracks/video")
+    add_property(properties, "current-tracks/sub")
+    add_property(properties, "current-tracks/sub2")
 
     table.sort(properties)
 
@@ -818,7 +827,7 @@ local menu_data = {}
 local observed_properties = {}
 local property_cache = {}
 local active_bindings = {}
-local property_set = {}
+local property_set
 local property_items = {}
 local have_dirty_items = false
 local current_item
@@ -849,11 +858,19 @@ local function on_none_property_change(name)
     on_property_change(name, none_getters[name]())
 end
 
+local function is_known_property(name)
+    if not property_set then
+        property_set = to_map(mp.get_property_native("property-list"))
+    end
+
+    return property_set[name] ~= nil
+end
+
 function _G.get(name, default)
     if not observed_properties[name] then
         local result, err = (none_getters[name] or mp.get_property_native)(name)
 
-        if err == "property not found" and not property_set(name:match("^([^/]+)")) then
+        if err == "property not found" and not is_known_property(name:match("^([^/]+)")) then
             mp.msg.error("Property '" .. name .. "' was not found.")
             return default
         end
@@ -968,7 +985,9 @@ local function on_idle()
 
     for _, item in pairs(menu) do
         if item.dirty then
+            current_item = item
             item:update()
+            current_item = nil
             item.dirty = false
         end
     end
@@ -1348,7 +1367,6 @@ local function parse_menu_conf(_, vo_configured)
 
     mp.unobserve_property(parse_menu_conf)
 
-    property_set = to_map(mp.get_property_native("property-list"))
     active_bindings = get_active_bindings()
 
     local lines = get_menu_conf()
@@ -1393,7 +1411,6 @@ local function parse_menu_conf(_, vo_configured)
         end
     end
 
-    property_set = nil
     active_bindings = nil
     current_item = nil
 

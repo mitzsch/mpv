@@ -536,7 +536,7 @@ static int mp_property_filename(void *ctx, struct m_property *prop,
         if (strcmp(ka->key, "no-ext") == 0) {
             action = ka->action;
             arg = ka->arg;
-            f = mp_strip_ext(filename, f);
+            f = bstrto0(filename, mp_strip_ext(bstr0(f)));
         }
     }
     int r = m_property_strdup_ro(action, arg, f);
@@ -5431,7 +5431,7 @@ static void cmd_overlay_add(void *pcmd)
         MP_ERR(mpctx, "overlay-add: invalid id %d\n", id);
         goto error;
     }
-    if (w <= 0 || h <= 0 || stride < w * 4 || (stride % 4) || offset < 0) {
+    if (w <= 0 || h <= 0 || stride / 4 < w || (stride % 4) || offset < 0) {
         MP_ERR(mpctx, "overlay-add: inconsistent parameters\n");
         goto error;
     }

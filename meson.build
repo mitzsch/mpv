@@ -65,6 +65,7 @@ sources = files(
     'audio/filter/af_drop.c',
     'audio/filter/af_format.c',
     'audio/filter/af_lavcac3enc.c',
+    'audio/filter/af_lavfi_tempo.c',
     'audio/filter/af_scaletempo.c',
     'audio/filter/af_scaletempo2.c',
     'audio/filter/af_scaletempo2_internals.c',
@@ -106,6 +107,7 @@ sources = files(
     'demux/demux_playlist.c',
     'demux/demux_raw.c',
     'demux/demux_timeline.c',
+    'demux/dovi_split.c',
     'demux/ebml.c',
     'demux/packet.c',
     'demux/packet_pool.c',
@@ -117,6 +119,7 @@ sources = files(
     'filters/f_auto_filters.c',
     'filters/f_decoder_wrapper.c',
     'filters/f_demux_in.c',
+    'filters/f_enhancement_pair.c',
     'filters/f_hwtransfer.c',
     'filters/f_lavfi.c',
     'filters/f_output_chain.c',
@@ -197,6 +200,8 @@ sources = files(
     'stream/stream_mpv.c',
     'stream/stream_null.c',
     'stream/stream_slice.c',
+    'stream/stream_bstr.c',
+    'stream/stream_env.c',
 
     ## Subtitles
     'sub/ass_mp.c',
@@ -627,7 +632,8 @@ libcurl = dependency('libcurl', version: '>= 7.88.0', required: get_option('libc
 features += {'libcurl': libcurl.found()}
 if features['libcurl']
     dependencies += [libcurl]
-    sources += files('stream/stream_curl.c')
+    sources += files('demux/avio_crypto.c',
+                     'stream/stream_curl.c')
 endif
 
 cdda_opt = get_option('cdda').require(
@@ -782,7 +788,10 @@ if features['uchardet']
     dependencies += uchardet
 endif
 
-vapoursynth = dependency('vapoursynth', version: '>= 56', required: get_option('vapoursynth'))
+vapoursynth = dependency('vapoursynth-script', version: '>= 56', required: false)
+if not vapoursynth.found()
+    vapoursynth = dependency('vapoursynth', version: '>= 56', required: get_option('vapoursynth'))
+endif
 features += {'vapoursynth': vapoursynth.found()}
 if features['vapoursynth']
     dependencies += vapoursynth.partial_dependency(compile_args: true, includes: true)
