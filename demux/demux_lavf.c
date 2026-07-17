@@ -69,11 +69,11 @@
 
 #define OPT_BASE_STRUCT struct demux_lavf_opts
 struct demux_lavf_opts {
-    int probesize;
+    int64_t probesize;
     int probeinfo;
     int probescore;
     float analyzeduration;
-    int buffersize;
+    int64_t buffersize;
     bool allow_mimetype;
     char *format;
     char **avopts;
@@ -86,14 +86,15 @@ struct demux_lavf_opts {
 
 const struct m_sub_options demux_lavf_conf = {
     .opts = (const m_option_t[]) {
-        {"demuxer-lavf-probesize", OPT_INT(probesize), M_RANGE(32, INT_MAX)},
+        {"demuxer-lavf-probesize", OPT_BYTE_SIZE(probesize),
+         M_RANGE(32, M_MAX_MEM_BYTES)},
         {"demuxer-lavf-probe-info", OPT_CHOICE(probeinfo,
             {"no", 0}, {"yes", 1}, {"auto", -1}, {"nostreams", -2})},
         {"demuxer-lavf-format", OPT_STRING(format)},
         {"demuxer-lavf-analyzeduration", OPT_FLOAT(analyzeduration),
          M_RANGE(0, 3600)},
-        {"demuxer-lavf-buffersize", OPT_INT(buffersize),
-         M_RANGE(1, 10 * 1024 * 1024), OPTDEF_INT(BIO_BUFFER_SIZE)},
+        {"demuxer-lavf-buffersize", OPT_BYTE_SIZE(buffersize),
+         M_RANGE(1, 10 * 1024 * 1024), OPTDEF_INT64(BIO_BUFFER_SIZE)},
         {"demuxer-lavf-allow-mimetype", OPT_BOOL(allow_mimetype)},
         {"demuxer-lavf-probescore", OPT_INT(probescore),
          M_RANGE(1, AVPROBE_SCORE_MAX)},
@@ -873,6 +874,7 @@ static void handle_new_stream(demuxer_t *demuxer, int i)
             sh->lang = talloc_strdup(sh, lang->value);
         sh->hls_bitrate = dict_get_decimal(st->metadata, "variant_bitrate", 0);
         AVProgram *prog = NULL;
+        // In the order as reported by lavf
         while ((prog = av_find_program_from_stream(avfc, prog, i)))
             MP_TARRAY_APPEND(sh, sh->program_ids, sh->num_program_ids, prog->id);
         sh->missing_timestamps = !!(priv->avif_flags & AVFMT_NOTIMESTAMPS);
@@ -1008,6 +1010,13 @@ static int nested_io_close2(struct AVFormatContext *s, AVIOContext *pb)
     return priv->default_io_close2(s, pb);
 }
 
+static int cmp_avprogram(const void *const a, const void *const b)
+{
+    int ida = (*(const AVProgram *const *)a)->id;
+    int idb = (*(const AVProgram *const *)b)->id;
+    return (ida > idb) - (ida < idb);
+}
+
 static void build_editions(demuxer_t *demuxer)
 {
     lavf_priv_t *priv = demuxer->priv;
@@ -1026,9 +1035,14 @@ static void build_editions(demuxer_t *demuxer)
         return;
     }
 
+    // Order programs by their id so the list is stable regardless of the order
+    // lavf happened to discover them.
+    AVProgram **progs = talloc_memdup(NULL, avfc->programs, avfc->nb_programs * sizeof(progs[0]));
+    qsort(progs, avfc->nb_programs, sizeof(progs[0]), cmp_avprogram);
+
     int first_nonempty = -1;
     for (unsigned i = 0; i < avfc->nb_programs; i++) {
-        AVProgram *prog = avfc->programs[i];
+        AVProgram *prog = progs[i];
 
         struct demux_edition ed = {
             .demuxer_id = prog->id,
@@ -1099,7 +1113,7 @@ static void build_editions(demuxer_t *demuxer)
         int best_bitrate = 0;
         bool best_ok = false;
         for (int n = 0; n < demuxer->num_editions; n++) {
-            AVProgram *prog = avfc->programs[n];
+            AVProgram *prog = progs[n];
             struct sh_stream *rep = NULL;
             for (unsigned j = 0; j < prog->nb_stream_indexes; j++) {
                 unsigned idx = prog->stream_index[j];
@@ -1132,6 +1146,8 @@ static void build_editions(demuxer_t *demuxer)
     }
 
     demuxer->edition = selected >= 0 ? selected : first_nonempty >= 0 ? first_nonempty : 0;
+
+    talloc_free(progs);
 }
 
 #if LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT(60, 19, 100)
@@ -1401,7 +1417,7 @@ static int demux_open_lavf(demuxer_t *demuxer, enum demux_check check)
 
     if (lavfdopts->probesize) {
         if (av_opt_set_int(avfc, "probesize", lavfdopts->probesize, 0) < 0)
-            MP_ERR(demuxer, "couldn't set option probesize to %u\n",
+            MP_ERR(demuxer, "couldn't set option probesize to %"PRId64"\n",
                    lavfdopts->probesize);
     }
 

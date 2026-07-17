@@ -2115,7 +2115,8 @@ static int get_track_entry(int item, int action, void *arg, void *ctx)
         {"main-selection", SUB_PROP_INT(order), .unavailable = order < 0},
         {"external-filename", SUB_PROP_STR(track->external_filename),
                         .unavailable = !track->external_filename},
-        {"ff-index",    SUB_PROP_INT(track->ff_index)},
+        {"ff-index",    SUB_PROP_INT(track->ff_index),
+                        .unavailable = track->ff_index == -1},
         {"hls-bitrate", SUB_PROP_INT(track->hls_bitrate),
                         .unavailable = !track->hls_bitrate},
         {"program-id",  SUB_PROP_INT(sh && sh->num_program_ids ? sh->program_ids[0] : -1),
@@ -8388,6 +8389,10 @@ void mp_option_run_callback(struct MPContext *mpctx, struct mp_option_callback *
                             if (sel != mpctx->current_track[i][t])
                                 mp_switch_track_n(mpctx, i, t, sel, 0);
                         }
+                    }
+                    if (demuxer->ts_resets_possible) {
+                        reset_playback_state(mpctx);
+                        demux_flush(demuxer);
                     }
                     mp_notify_property(mpctx, "current-edition");
                     print_track_list(mpctx,
