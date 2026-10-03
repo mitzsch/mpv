@@ -22,7 +22,7 @@
 
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
-#include <libavcodec/defs.h>
+#include <libavutil/intreadwrite.h>
 #include <libavutil/opt.h>
 
 #include "audio/aframe.h"
@@ -38,10 +38,11 @@
 #include "options/options.h"
 
 #define OUTBUF_SIZE 65536
+#define TRUEHD_MAJOR_SYNC_WARN_INTERVAL 6000
 
 struct spdifContext {
     struct mp_log   *log;
-    struct mp_codec_params *codec;	
+    struct mp_codec_params *codec;
     enum AVCodecID   codec_id;
     AVFormatContext *lavf_ctx;
     AVPacket        *avpkt;
@@ -49,7 +50,10 @@ struct spdifContext {
     uint8_t          out_buffer[OUTBUF_SIZE];
     bool             need_close;
     bool             use_dts_hd;
-    int              dropped_startup_packets;
+    bool             codec_params_probed;
+    int              codec_profile;
+    int              codec_rate;
+    unsigned int     dropped_startup_packets;
     struct mp_aframe *fmt;
     int              sstride;
     struct mp_aframe_pool *pool;
@@ -90,6 +94,7 @@ static void close_lavf_context(struct spdifContext *spdif_ctx, bool write_traile
         spdif_ctx->lavf_ctx = NULL;
     }
     spdif_ctx->need_close = false;
+    TA_FREEP(&spdif_ctx->fmt);
 }
 
 // (called on both filter destruction _and_ if lavf fails to init)
@@ -106,15 +111,12 @@ static void ad_spdif_reset(struct mp_filter *da)
     struct spdifContext *spdif_ctx = da->priv;
 
     close_lavf_context(spdif_ctx, false);
-    TA_FREEP(&spdif_ctx->fmt);
+    spdif_ctx->dropped_startup_packets = 0;
 }
 
-// TrueHD/MLP major sync starts with f8 72 6f ba/bb after the AU header.
-static bool truehd_has_major_sync(AVPacket *pkt)
+static bool truehd_has_major_sync(const AVPacket *pkt)
 {
-    return pkt->size >= 8 && pkt->data[4] == 0xf8 &&
-           pkt->data[5] == 0x72 && pkt->data[6] == 0x6f &&
-           (pkt->data[7] & 0xfe) == 0xba;
+    return pkt->size >= 8 && AV_RB32(pkt->data + 4) == 0xf8726fba;
 }
 
 static void determine_codec_params(struct mp_filter *da, AVPacket *pkt,
@@ -187,15 +189,25 @@ done:
     avcodec_free_context(&ctx);
 }
 
+static bool dts_profile_maybe_hd(int profile)
+{
+    return profile == AV_PROFILE_DTS_HD_HRA ||
+           profile == AV_PROFILE_DTS_HD_MA  ||
+           profile == AV_PROFILE_DTS_HD_MA_X ||
+           profile == AV_PROFILE_DTS_HD_MA_X_IMAX ||
+           profile == AV_PROFILE_UNKNOWN;
+}
+
 // Some codecs do not need every probed value for spdif muxer setup.
 static bool codec_params_warning_needed(struct spdifContext *spdif_ctx,
                                         int profile, int rate)
 {
     switch (spdif_ctx->codec_id) {
     case AV_CODEC_ID_DTS:
-        return spdif_ctx->use_dts_hd && profile == AV_PROFILE_UNKNOWN;
-    case AV_CODEC_ID_TRUEHD:
-        return profile == AV_PROFILE_UNKNOWN || rate <= 0;
+        if (spdif_ctx->use_dts_hd && dts_profile_maybe_hd(profile))
+            return profile == AV_PROFILE_UNKNOWN;
+
+        return rate <= 0;
     case AV_CODEC_ID_AC3:
         return rate <= 0;
     default:
@@ -209,12 +221,20 @@ static int init_filter(struct mp_filter *da)
 
     AVPacket *pkt = spdif_ctx->avpkt;
 
-    int profile = AV_PROFILE_UNKNOWN;
-    int c_rate = 0;
-    determine_codec_params(da, pkt, &profile, &c_rate);
-    MP_VERBOSE(da, "In: profile=%d samplerate=%d\n", profile, c_rate);
-    if (codec_params_warning_needed(spdif_ctx, profile, c_rate))
-        MP_WARN(da, "Failed to parse codec parameters.\n");
+    if (!spdif_ctx->codec_params_probed) {
+        spdif_ctx->codec_profile = AV_PROFILE_UNKNOWN;
+        determine_codec_params(da, pkt, &spdif_ctx->codec_profile,
+                               &spdif_ctx->codec_rate);
+        spdif_ctx->codec_params_probed = true;
+        MP_VERBOSE(da, "In: profile=%d samplerate=%d\n",
+                   spdif_ctx->codec_profile, spdif_ctx->codec_rate);
+        if (codec_params_warning_needed(spdif_ctx, spdif_ctx->codec_profile,
+                                        spdif_ctx->codec_rate))
+            MP_WARN(da, "Failed to parse codec parameters.\n");
+    }
+
+    int profile = spdif_ctx->codec_profile;
+    int c_rate = spdif_ctx->codec_rate;
 
     AVFormatContext *lavf_ctx  = avformat_alloc_context();
     if (!lavf_ctx)
@@ -265,21 +285,13 @@ static int init_filter(struct mp_filter *da)
         num_channels                    = 2;
         break;
     case AV_CODEC_ID_DTS: {
-        // Define DTS-HD HRA, DTS-HD MA, DTS-HD MA X and DTS-HD MA IMAX 
-        // as HD Audio. Just be sure all are treated correctly. 
-        bool is_hd = profile == AV_PROFILE_DTS_HD_HRA       ||
-                     profile == AV_PROFILE_DTS_HD_MA        ||
-                     profile == AV_PROFILE_DTS_HD_MA_X      ||
-                     profile == AV_PROFILE_DTS_HD_MA_X_IMAX ||
-                     profile == AV_PROFILE_UNKNOWN;
-
         // Apparently, DTS-HD over SPDIF is specified to be 7.1 (8 channels)
         // for DTS-HD MA, and stereo (2 channels) for DTS-HD HRA. The bit
         // streaming rate as well as the signaled channel count are defined
         // based on this value.
         int dts_hd_spdif_channel_count = profile == AV_PROFILE_DTS_HD_HRA ?
                                          2 : 8;
-        if (spdif_ctx->use_dts_hd && is_hd) {
+        if (spdif_ctx->use_dts_hd && dts_profile_maybe_hd(profile)) {
             av_dict_set_int(&format_opts, "dtshd_rate",
                             dts_hd_spdif_channel_count * 96000, 0);
             sample_format               = AF_FORMAT_S_DTSHD;
@@ -369,13 +381,19 @@ static void ad_spdif_process(struct mp_filter *da)
     mp_set_av_packet(spdif_ctx->avpkt, mpkt, NULL);
     spdif_ctx->avpkt->pts = spdif_ctx->avpkt->dts = 0;
     if (!spdif_ctx->lavf_ctx) {
-        // A fresh TrueHD spdif muxer needs a major sync before it can begin
-        // muxing the stream, and init_filter() probes codec parameters from
-        // this packet as well, so wait for major sync before initializing.
+        // A fresh TrueHD spdif muxer needs a major sync to initialize its
+        // stream parameters, so wait for major sync before initializing.
         if (spdif_ctx->codec_id == AV_CODEC_ID_TRUEHD &&
             !truehd_has_major_sync(spdif_ctx->avpkt))
         {
             spdif_ctx->dropped_startup_packets++;
+            if (spdif_ctx->dropped_startup_packets %
+                TRUEHD_MAJOR_SYNC_WARN_INTERVAL == 0)
+            {
+                MP_WARN(da, "Still waiting for TrueHD major sync after "
+                         "dropping %u packets.\n",
+                        spdif_ctx->dropped_startup_packets);
+            }
             drop_packet = true;
             goto done;
         }
@@ -393,7 +411,7 @@ static void ad_spdif_process(struct mp_filter *da)
         goto done;
     }
     if (spdif_ctx->dropped_startup_packets) {
-        MP_VERBOSE(da, "dropped %d TrueHD packet%s before major sync\n",
+        MP_VERBOSE(da, "dropped %u TrueHD packet%s before major sync\n",
                    spdif_ctx->dropped_startup_packets,
                    spdif_ctx->dropped_startup_packets == 1 ? "" : "s");
         spdif_ctx->dropped_startup_packets = 0;
@@ -503,7 +521,7 @@ static struct mp_decoder *create(struct mp_filter *parent,
 
     struct spdifContext *spdif_ctx = da->priv;
     spdif_ctx->log = da->log;
-    spdif_ctx->codec = codec;	
+    spdif_ctx->codec = codec;
     spdif_ctx->pool = mp_aframe_pool_create(spdif_ctx);
     spdif_ctx->public.f = da;
 

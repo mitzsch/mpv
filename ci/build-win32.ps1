@@ -20,6 +20,20 @@ if (-not (Test-Path "$amfExtractPath/AMF")) {
 }
 $amfExtractPath = Resolve-Path $amfExtractPath
 
+$vapoursynthVersion = "80"
+$vapoursynthArchive = "vapoursynth-R$vapoursynthVersion.tar.gz"
+if (-not (Test-Path $vapoursynthArchive)) {
+    Invoke-WebRequest -Uri "https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R$vapoursynthVersion.tar.gz" -OutFile $vapoursynthArchive
+}
+if (-not (Test-Path "$subprojects/vapoursynth/include")) {
+    New-Item -Path "$subprojects/vapoursynth" -ItemType Directory -Force | Out-Null
+    tar -xzf $vapoursynthArchive --strip-components=1 -C "$subprojects/vapoursynth" "vapoursynth-R$vapoursynthVersion/include"
+}
+Set-Content -Path "$subprojects/vapoursynth/meson.build" -Value @"
+project('vapoursynth', version: '$vapoursynthVersion')
+meson.override_dependency('vapoursynth', declare_dependency(include_directories: 'include'))
+"@
+
 # Wrap shaderc to run git-sync-deps and patch unsupported generator expression
 if (-not (Test-Path "$subprojects/shaderc_cmake")) {
     git clone https://github.com/google/shaderc --depth 1 $subprojects/shaderc_cmake
@@ -217,9 +231,11 @@ dep = declare_dependency(
     harfbuzz,
     # those deps are hardcoded, because parsing rustc native-static-libs, would
     # be lots of code for little benefit, those libs won't really change.
+    # Keep in sync with library/windows_link/src/lib.rs in the rust repo.
     cc.find_library('dbghelp', required: true),
     cc.find_library('kernel32', required: true),
     cc.find_library('ntdll', required: true),
+    cc.find_library('synchronization', required: true),
     cc.find_library('userenv', required: true),
     cc.find_library('ws2_32', required: true)
   ],
@@ -233,7 +249,7 @@ $projects = @(
     @{
         Path = "$subprojects/ffmpeg.wrap"
         URL = "https://gitlab.freedesktop.org/gstreamer/meson-ports/ffmpeg.git"
-        Revision = "meson-8.1"
+        Revision = "meson-9.0"
         Provides = @(
             "dependency_names = libavcodec, libavdevice, libavfilter, libavformat, libavutil, libswresample, libswscale"
             "program_names = ffmpeg"
@@ -335,6 +351,7 @@ meson setup build `
     -Damf=enabled `
     -Dd3d11=enabled `
     -Dsubrandr=enabled `
+    -Dvapoursynth=enabled `
     -Dvulkan=enabled `
     -Djavascript=enabled `
     -Dwin32-smtc=enabled `

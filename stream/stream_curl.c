@@ -168,6 +168,8 @@ struct priv {
     // Stream parameters
     bool seekable;
     int64_t content_size; // -1 if unknown
+    int64_t start_offset; // requested initial byte offset, immutable after open
+    char *server_filename; // from Content-Disposition, NULL if absent
 
     // Producer state. Only touched by the curl thread.
     uint64_t request_start;    // absolute byte position of next request
@@ -176,6 +178,8 @@ struct priv {
     int retry_count;           // consecutive failed attempts at request_start
     bool active;               // handle is currently active in the multi
     bool finished;             // current request has reached EOF
+    int64_t reply_end;         // inclusive end of the reply's byte range, -1 if none
+    bool reply_rejected;       // reply is unusable, its body is dropped
 
     // Probe state. Set on the curl thread read by curl_open after.
     bool probed;
@@ -381,7 +385,7 @@ static size_t write_callback(char *ptr, size_t size, size_t nmemb, void *userdat
 
     // header_callback validated the response and logged any error status,
     // we don't care about error body.
-    if (!p->stream_ok)
+    if (!p->stream_ok || p->reply_rejected)
         return CURL_WRITEFUNC_ERROR;
 
     if (atomic_load_explicit(&p->aborted, memory_order_relaxed))
@@ -415,24 +419,40 @@ static int xferinfo_callback(void *userdata, curl_off_t dl_total, curl_off_t dl_
     return atomic_load_explicit(&p->aborted, memory_order_relaxed);
 }
 
-static int64_t parse_content_range_total(const char *value)
-{
-    if (!value)
-        return -1;
-    bstr after;
-    if (!bstr_split_tok(bstr0(value), "/", &(bstr){0}, &after))
-        return -1;
-    bstr rest;
-    long long total = bstrtoll(after, &rest, 10);
-    return (rest.len == 0 && total > 0) ? (int64_t)total : -1;
-}
-
 static const char *header_value(CURL *c, const char *name)
 {
     struct curl_header *h = NULL;
     if (curl_easy_header(c, name, 0, CURLH_HEADER, -1, &h) == CURLHE_OK)
         return h->value;
     return NULL;
+}
+
+// "bytes <start>-<end>/<total>", where <total> is "*" if unknown, or
+// "bytes */<total>" on a 416 reply. Absent or unparsable fields are -1.
+static void parse_content_range(CURL *c, int64_t *out_start, int64_t *out_end,
+                                int64_t *out_total)
+{
+    *out_start = *out_end = *out_total = -1;
+    const char *value = header_value(c, "Content-Range");
+    if (!value)
+        return;
+    bstr range, total;
+    if (!bstr_split_tok(bstr0(value), "/", &range, &total))
+        return;
+    bstr rest;
+    long long v = bstrtoll(total, &rest, 10);
+    if (rest.len == 0 && v > 0)
+        *out_total = v;
+    bstr_eatstart0(&range, "bytes");
+    bstr start, end;
+    if (!bstr_split_tok(bstr_lstrip(range), "-", &start, &end))
+        return;
+    v = bstrtoll(start, &rest, 10);
+    if (start.len > 0 && rest.len == 0 && v >= 0)
+        *out_start = v;
+    v = bstrtoll(end, &rest, 10);
+    if (end.len > 0 && rest.len == 0 && v >= 0)
+        *out_end = v;
 }
 
 static void finalize_probe(struct priv *p)
@@ -453,13 +473,44 @@ static void finalize_probe(struct priv *p)
     mp_mutex_unlock(&p->mtx);
 }
 
+static void check_http_reply(struct priv *p, long resp, int64_t range_start,
+                             int64_t range_total)
+{
+    if (resp == 416 && p->content_size < 0) {
+        // The request started past the end of a file of unknown size, so this
+        // is EOF. The reply tells the size if the server knows it by now.
+        if (range_total > 0 && range_total <= p->request_start) {
+            mp_mutex_lock(&p->mtx);
+            p->content_size = range_total;
+            mp_mutex_unlock(&p->mtx);
+        }
+        p->finished = true;
+        p->reply_rejected = true;
+        return;
+    }
+    if (!is_http_success(resp)) {
+        MP_ERR(p, "HTTP error %ld\n", resp);
+        p->reply_rejected = true;
+        return;
+    }
+    int64_t start = resp == 206 ? range_start : 0;
+    if (start != p->request_start) {
+        MP_ERR(p, "Server sent back unexpected reply with offset %" PRId64
+               " (expected %" PRIu64 ")\n", start, p->request_start);
+        p->reply_rejected = true;
+    }
+}
+
 // Empty line is the end of the header. Skip intermediate 1xx and 3xx responses,
 // we care about the final one.
-static void probe_http(struct priv *p, struct bstr line)
+static void on_http_header(struct priv *p, struct bstr line)
 {
     if (line.len > 0) {
-        // A new status line resets per-response state so that intermediate
-        // 1xx/3xx responses don't leak ICY metadata into the final one.
+        // ICY metadata is set up from the initial reply only. A new status line
+        // resets per-response state so that intermediate 1xx/3xx responses
+        // don't leak ICY metadata into the final one.
+        if (p->probed)
+            return;
         mp_mutex_lock(&p->mtx);
         if (bstr_startswith0(line, "HTTP/")) {
             mp_icy_reset(p->icy);
@@ -475,8 +526,24 @@ static void probe_http(struct priv *p, struct bstr line)
     if (resp < 200 || (resp >= 300 && resp < 400))
         return;
 
+    int64_t range_start, range_end, range_total;
+    parse_content_range(p->curl, &range_start, &range_end, &range_total);
+    p->reply_end = resp == 206 ? range_end : -1;
+
+    if (p->probed) {
+        check_http_reply(p, resp, range_start, range_total);
+        return;
+    }
+
     if (!is_http_success(resp)) {
         MP_ERR(p, "HTTP error %ld\n", resp);
+        goto done;
+    }
+
+    // A request with an explicit start offset must be honored by the server
+    if (p->start_offset > 0 && range_start != p->start_offset) {
+        MP_ERR(p, "Server ignored range request at offset %" PRId64 "\n",
+               p->start_offset);
         goto done;
     }
 
@@ -496,7 +563,7 @@ static void probe_http(struct priv *p, struct bstr line)
     if (p->seekable) {
         // Content-Range carries the full size on a partial response. On any
         // non-206 success code use Content-Length.
-        int64_t total = parse_content_range_total(header_value(p->curl, "Content-Range"));
+        int64_t total = range_total;
         if (total < 0 && resp != 206) {
             curl_off_t cl = -1;
             if (curl_easy_getinfo(p->curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T,
@@ -505,6 +572,11 @@ static void probe_http(struct priv *p, struct bstr line)
         }
         p->content_size = total;
     }
+
+    const char *cd = header_value(p->curl, "Content-Disposition");
+    if (cd)
+        p->server_filename = mp_parse_content_disposition(p, p->s, bstr0(cd));
+
     p->stream_ok = true;
 done:
     finalize_probe(p);
@@ -537,13 +609,13 @@ static size_t header_callback(char *buffer, size_t size, size_t nitems, void *us
     struct priv *p = userdata;
     size_t bytes = size * nitems;
 
-    if (p->probed)
+    if (p->probed && p->scheme->proto != MP_CURL_PROTO_HTTP)
         return bytes;
 
     struct bstr line = bstr_strip_linebreaks((bstr){buffer, bytes});
     switch (p->scheme->proto) {
     case MP_CURL_PROTO_HTTP:
-        probe_http(p, line);
+        on_http_header(p, line);
         break;
     case MP_CURL_PROTO_FTP:
         probe_ftp(p, line);
@@ -637,6 +709,8 @@ static void start_request(struct priv *p)
     }
 
     p->request_received = 0;
+    p->reply_end = -1;
+    p->reply_rejected = false;
     p->active = true;
     curl_multi_add_handle(p->ctx->multi, p->curl);
 }
@@ -675,13 +749,30 @@ static void on_done(struct priv *p, CURLcode code)
     p->request_start += p->request_received;
     p->request_received = 0;
 
+    if (p->reply_rejected && !aborted) {
+        // The reply check cut the transfer short, so the curl result means
+        // nothing. This is either the end of a file of unknown size or an
+        // error that was logged already.
+        mp_mutex_lock(&p->mtx);
+        if (p->finished) {
+            p->stream_eof = true;
+        } else {
+            p->stream_error = true;
+        }
+        mp_cond_broadcast(&p->cond);
+        mp_mutex_unlock(&p->mtx);
+        return;
+    }
+
     if (code == CURLE_OK && !aborted) {
         p->retry_count = 0;
 
-        bool chunked = p->seekable && p->opts->max_request_size > 0;
+        // A reply may end before the requested range does: servers cap their
+        // replies, and with an unknown file size only a 416 marks the end.
+        // Keep requesting from where this reply stopped.
         bool past_size = p->content_size > 0 && p->request_start >= p->content_size;
         bool past_end = p->request_end > 0 && p->request_start >= p->request_end;
-        if (chunked && !past_size && !past_end) {
+        if (p->seekable && p->reply_end >= 0 && !past_size && !past_end) {
             start_request(p);
             return;
         }
@@ -768,7 +859,8 @@ static void setup_curl(struct priv *p)
     curl_easy_setopt(c, CURLOPT_DEBUGFUNCTION, debug_callback);
     curl_easy_setopt(c, CURLOPT_DEBUGDATA, p);
 
-    curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
+    bool identity = p->start_offset > 0 || p->request_end > 0;
+    curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, identity ? "identity" : "");
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_MAXREDIRS, (long)p->opts->max_redirects);
     curl_easy_setopt(c, CURLOPT_HTTP_VERSION, (long)p->opts->http_version);
@@ -872,7 +964,10 @@ static int curl_seek(struct stream *s, int64_t pos)
 static int64_t curl_get_size(struct stream *s)
 {
     struct priv *p = s->priv;
-    return p->content_size;
+    mp_mutex_lock(&p->mtx);
+    int64_t size = p->content_size;
+    mp_mutex_unlock(&p->mtx);
+    return size;
 }
 
 static int curl_control(struct stream *s, int cmd, void *arg)
@@ -953,8 +1048,10 @@ static int curl_open(stream_t *s, const struct stream_open_args *args)
 
     if (args->special_arg) {
         const struct curl_open_args *oa = args->special_arg;
-        if (oa->offset > 0)
+        if (oa->offset > 0) {
+            p->start_offset = oa->offset;
             p->request_start = oa->offset;
+        }
         if (oa->end_offset > 0)
             p->request_end = oa->end_offset;
     }
@@ -987,6 +1084,7 @@ static int curl_open(stream_t *s, const struct stream_open_args *args)
     bstr mime = bstr_strip(bstr_split(bstr0(content_type), ";", NULL));
     if (mime.len)
         s->mime_type = bstrto0(s, mime);
+    s->server_filename = talloc_strdup(s, p->server_filename);
 
     const char *effective_url = NULL;
     curl_easy_getinfo(p->curl, CURLINFO_EFFECTIVE_URL, &effective_url);
@@ -1001,7 +1099,7 @@ static int curl_open(stream_t *s, const struct stream_open_args *args)
     s->get_size = curl_get_size;
     s->control = curl_control;
     s->close = curl_close;
-    s->pos = p->request_start;
+    s->pos = p->start_offset;
 
     return STREAM_OK;
 }

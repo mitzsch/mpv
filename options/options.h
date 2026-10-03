@@ -164,6 +164,11 @@ struct mp_bluray_opts {
     int angle;
 };
 
+struct dvda_opts {
+    char *device;
+    int page;
+};
+
 typedef struct MPOpts {
     bool property_print_help;
     bool use_terminal;
@@ -255,6 +260,7 @@ typedef struct MPOpts {
     int hls_bitrate;
     int edition_id;
     bool flatten_editions;
+    bool disc_menu;
     bool show_dependent_tracks;
     bool initial_audio_sync;
     double sync_max_video_change;
@@ -283,6 +289,7 @@ typedef struct MPOpts {
     char **input_commands;
     bool consolecontrols;
     int playlist_pos;
+    int playlist_inherit_options;
     struct m_rel_time play_start;
     struct m_rel_time play_end;
     struct m_rel_time play_length;
@@ -419,6 +426,7 @@ typedef struct MPOpts {
     struct wingl_opts *wingl_opts;
     struct cuda_opts *cuda_opts;
     struct dvd_opts *dvd_opts;
+    struct dvda_opts *dvda_opts;
     struct vaapi_opts *vaapi_opts;
     struct sws_opts *sws_opts;
     struct zimg_opts *zimg_opts;
